@@ -2,11 +2,18 @@ package com.zyy.smartfloat
 
 import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.GestureDescription
+import android.graphics.Bitmap
 import android.graphics.Path
+import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
 import android.view.accessibility.AccessibilityEvent
+import androidx.annotation.RequiresApi
+import kotlinx.coroutines.suspendCancellableCoroutine
+import java.util.concurrent.Executor
+import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
 
 class TapAccessibilityService : AccessibilityService() {
 
@@ -72,5 +79,38 @@ class TapAccessibilityService : AccessibilityService() {
                 Log.d(TAG, "dispatchGesture returned: $dispatched for tap #$i at ($x, $y)")
             }
         }, delayMs)
+    }
+
+    @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
+    suspend fun captureScreenshot(): Bitmap = suspendCancellableCoroutine { continuation ->
+        val executor = Executor { runnable -> handler.post(runnable) }
+        try {
+            takeScreenshot(
+                0,
+                executor,
+                object : TakeScreenshotCallback {
+                    override fun onSuccess(screenshotResult: ScreenshotResult) {
+                        val bitmap = Bitmap.wrapHardwareBuffer(
+                            screenshotResult.hardwareBuffer,
+                            screenshotResult.colorSpace
+                        ) ?: run {
+                            screenshotResult.hardwareBuffer.close()
+                            continuation.resumeWithException(RuntimeException("Bitmap.wrapHardwareBuffer returned null"))
+                            return
+                        }
+                        continuation.resume(bitmap)
+                        screenshotResult.hardwareBuffer.close()
+                    }
+
+                    override fun onFailure(errorCode: Int) {
+                        Log.e(TAG, "takeScreenshot failed with errorCode: $errorCode")
+                        continuation.resumeWithException(RuntimeException("takeScreenshot failed: errorCode=$errorCode"))
+                    }
+                }
+            )
+        } catch (e: Exception) {
+            Log.e(TAG, "takeScreenshot exception: ${e.message}", e)
+            continuation.resumeWithException(e)
+        }
     }
 }

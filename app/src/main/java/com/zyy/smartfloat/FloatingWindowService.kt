@@ -6,6 +6,7 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
 import android.content.Intent
+import android.graphics.Bitmap
 import android.graphics.PixelFormat
 import android.os.Build
 import android.os.IBinder
@@ -15,11 +16,21 @@ import android.view.LayoutInflater
 import android.view.MotionEvent
 import android.view.View
 import android.view.WindowManager
-import android.os.Handler
-import android.os.Looper
 import android.widget.FrameLayout
 import android.widget.Toast
 import androidx.core.app.NotificationCompat
+import com.zyy.smartfloat.network.RetrofitClient
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import okhttp3.MediaType.Companion.toMediaTypeOrNull
+import okhttp3.MultipartBody
+import okhttp3.RequestBody.Companion.asRequestBody
+import java.io.File
+import java.io.FileOutputStream
 
 class FloatingWindowService : Service() {
 
@@ -30,7 +41,7 @@ class FloatingWindowService : Service() {
     private var initialTouchX = 0f
     private var initialTouchY = 0f
     private var isShowing = false
-    private val handler = Handler(Looper.getMainLooper())
+    private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     companion object {
         const val CHANNEL_ID = "floating_window_channel"
@@ -66,6 +77,7 @@ class FloatingWindowService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onDestroy() {
+        serviceScope.cancel()
         hideFloatingWindow()
         super.onDestroy()
     }
@@ -74,7 +86,7 @@ class FloatingWindowService : Service() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(
                 CHANNEL_ID,
-                getString(R.string.key_k),
+                getString(R.string.notification_channel_name),
                 NotificationManager.IMPORTANCE_LOW
             ).apply {
                 description = getString(R.string.notification_channel_desc)
@@ -148,8 +160,8 @@ class FloatingWindowService : Service() {
                         val deltaX = Math.abs(event.rawX - initialTouchX)
                         val deltaY = Math.abs(event.rawY - initialTouchY)
                         if (deltaX < 10 && deltaY < 10) {
-                            Toast.makeText(this@FloatingWindowService, "悬浮按钮被点击", Toast.LENGTH_SHORT).show()
-                            simulateTapDelayed(84, 380, 1000L)
+                            Toast.makeText(this@FloatingWindowService, "截图上传中...", Toast.LENGTH_SHORT).show()
+                            captureAndUpload()
                         }
                         true
                     }
@@ -165,24 +177,63 @@ class FloatingWindowService : Service() {
         }
     }
 
-    private fun simulateTapDelayed(x: Int, y: Int, delayMs: Long) {
-        val points = arrayOf(
-            84 to 380,    // 原始目标
-        )
-        var offset = delayMs
-        for ((px, py) in points) {
-            val currentOffset = offset
-            handler.postDelayed({
-                val service = TapAccessibilityService.instance
-                if (service != null) {
-                    service.simulateTap(px.toFloat(), py.toFloat(), 0L, 1)
-                    Log.d(TAG, "simulateTap at ($px, $py)")
-                } else {
-                    Log.e(TAG, "TapAccessibilityService instance is null, cannot tap")
+    private fun captureAndUpload() {
+        serviceScope.launch {
+            try {
+                val a11yService = TapAccessibilityService.instance
+                if (a11yService == null) {
+                    Log.e(TAG, "TapAccessibilityService instance is null")
+                    withContext(Dispatchers.Main) {
+                        Toast.makeText(this@FloatingWindowService, "无障碍服务未连接", Toast.LENGTH_SHORT).show()
+                    }
+                    return@launch
                 }
-            }, currentOffset)
-            offset += 800L
+
+                if (Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                    Log.e(TAG, "takeScreenshot requires API 34+")
+                    withContext(Dispatchers.Main) {
+                        Toast.makeText(this@FloatingWindowService, "当前系统不支持无障碍截图(需Android 14+)", Toast.LENGTH_SHORT).show()
+                    }
+                    return@launch
+                }
+
+                val bitmap = a11yService.captureScreenshot()
+                Log.d(TAG, "screenshot captured: ${bitmap.width}x${bitmap.height}")
+
+                val file = saveBitmapToFile(bitmap)
+                Log.d(TAG, "screenshot saved to: ${file.absolutePath}")
+
+                val url = uploadScreenshot(file)
+                Log.d(TAG, "upload success, url: $url")
+
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(this@FloatingWindowService, "上传成功: $url", Toast.LENGTH_LONG).show()
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "captureAndUpload failed: ${e.message}", e)
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(this@FloatingWindowService, "截图上传失败: ${e.message}", Toast.LENGTH_LONG).show()
+                }
+            }
         }
+    }
+
+    private fun saveBitmapToFile(bitmap: Bitmap): File {
+        val dir = cacheDir
+        val file = File(dir, "smartFloat.png")
+        FileOutputStream(file).use { fos ->
+            bitmap.compress(Bitmap.CompressFormat.PNG, 100, fos)
+        }
+        bitmap.recycle()
+        return file
+    }
+
+    private suspend fun uploadScreenshot(file: File): String {
+        val requestBody = file.asRequestBody("image/png".toMediaTypeOrNull())
+        val part = MultipartBody.Part.createFormData("file", file.name, requestBody)
+        val response = RetrofitClient.uploadApi.uploadFile(part)
+        Log.d(TAG, "upload response: code=${response.code}, message=${response.message}, data=${response.data}")
+        return response.data ?: "no url returned"
     }
 
     private fun hideFloatingWindow() {
