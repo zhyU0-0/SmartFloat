@@ -1,0 +1,10 @@
+<resources>
+    <string name="app_name">SmartFloat</string>
+    <string name="title_activity_main">SmartFloat</string>
+    <string name="notification_channel_name">悬浮窗服务</string>
+    <string name="notification_channel_desc">悬浮窗服务运行中</string>
+    <string name="floating_service_notification">悬浮按钮已显示</string>
+    <string name="show_floating_button">显示悬浮按钮</string>
+    <string name="hide_floating_button">隐藏悬浮按钮</string>
+    <string name="accessibility_service_desc">SmartFloat 辅助点击服务，用于在悬浮按钮点击后模拟屏幕触摸事件</string>
+</resources>
