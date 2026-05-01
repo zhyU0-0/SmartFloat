@@ -8,9 +8,11 @@ import java.util.concurrent.TimeUnit
 
 object RetrofitClient {
 
-    private const val BASE_URL = "http://47.112.208.118:9080/"
+    private const val UPLOAD_BASE_URL = "http://47.112.208.118:9080/"
+    private const val LLM_BASE_URL = "https://ark.cn-beijing.volces.com/"
 
-    val uploadApi: UploadApi by lazy { retrofit.create(UploadApi::class.java) }
+    val uploadApi: UploadApi by lazy { uploadRetrofit.create(UploadApi::class.java) }
+    val llmApi: LlmApi by lazy { llmRetrofit.create(LlmApi::class.java) }
 
     private val okHttpClient: OkHttpClient by lazy {
         val logging = HttpLoggingInterceptor().apply {
@@ -18,15 +20,23 @@ object RetrofitClient {
         }
         OkHttpClient.Builder()
             .addInterceptor(logging)
-            .connectTimeout(30, TimeUnit.SECONDS)
-            .readTimeout(30, TimeUnit.SECONDS)
-            .writeTimeout(60, TimeUnit.SECONDS)
+            .connectTimeout(60, TimeUnit.SECONDS)
+            .readTimeout(60, TimeUnit.SECONDS)
+            .writeTimeout(120, TimeUnit.SECONDS)
             .build()
     }
 
-    private val retrofit: Retrofit by lazy {
+    private val uploadRetrofit: Retrofit by lazy {
         Retrofit.Builder()
-            .baseUrl(BASE_URL)
+            .baseUrl(UPLOAD_BASE_URL)
+            .client(okHttpClient)
+            .addConverterFactory(GsonConverterFactory.create())
+            .build()
+    }
+
+    private val llmRetrofit: Retrofit by lazy {
+        Retrofit.Builder()
+            .baseUrl(LLM_BASE_URL)
             .client(okHttpClient)
             .addConverterFactory(GsonConverterFactory.create())
             .build()

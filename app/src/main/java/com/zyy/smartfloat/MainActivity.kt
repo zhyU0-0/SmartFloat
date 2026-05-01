@@ -2,8 +2,10 @@ package com.zyy.smartfloat
 
 import android.Manifest
 import android.accessibilityservice.AccessibilityServiceInfo
+import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
@@ -19,11 +21,13 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -39,34 +43,66 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
+import androidx.localbroadcastmanager.content.LocalBroadcastManager
 import com.zyy.smartfloat.ui.theme.SmartFloatTheme
 
 class MainActivity : ComponentActivity() {
+
+    private var llmResult: String = ""
+    private val receiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            if (intent?.action == FloatingWindowService.ACTION_LLM_RESULT) {
+                llmResult = intent.getStringExtra(FloatingWindowService.EXTRA_LLM_RESULT) ?: ""
+                setContent {
+                    SmartFloatTheme {
+                        Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
+                            FloatingButtonScreen(
+                                modifier = Modifier.padding(innerPadding),
+                                llmResult = llmResult
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        LocalBroadcastManager.getInstance(this).registerReceiver(
+            receiver,
+            IntentFilter(FloatingWindowService.ACTION_LLM_RESULT)
+        )
         setContent {
             SmartFloatTheme {
                 Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
                     FloatingButtonScreen(
-                        modifier = Modifier.padding(innerPadding)
+                        modifier = Modifier.padding(innerPadding),
+                        llmResult = llmResult
                     )
                 }
             }
         }
     }
+
+    override fun onDestroy() {
+        LocalBroadcastManager.getInstance(this).unregisterReceiver(receiver)
+        super.onDestroy()
+    }
 }
 
 @Composable
-fun FloatingButtonScreen(modifier: Modifier = Modifier) {
+fun FloatingButtonScreen(modifier: Modifier = Modifier, llmResult: String = "") {
     val context = LocalContext.current
     var isFloatingShowing by remember { mutableStateOf(false) }
+    var llmQuestion by remember { mutableStateOf("点击返回按钮") }
 
     val notificationPermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission()
     ) { granted ->
         if (granted) {
-            startFloatingService(context)
+            startFloatingService(context, llmQuestion)
             isFloatingShowing = true
         }
     }
@@ -83,7 +119,7 @@ fun FloatingButtonScreen(modifier: Modifier = Modifier) {
         ) {
             notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
         } else {
-            startFloatingService(ctx)
+            startFloatingService(ctx, llmQuestion)
             onReady()
         }
     }
@@ -125,6 +161,19 @@ fun FloatingButtonScreen(modifier: Modifier = Modifier) {
 
         Spacer(modifier = Modifier.height(20.dp))
 
+        OutlinedTextField(
+            value = llmQuestion,
+            onValueChange = { llmQuestion = it },
+            label = { Text("LLM指令") },
+            placeholder = { Text("例如：点击返回按钮") },
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 32.dp),
+            maxLines = 3
+        )
+
+        Spacer(modifier = Modifier.height(20.dp))
+
         Button(
             onClick = {
                 if (isFloatingShowing) {
@@ -147,6 +196,16 @@ fun FloatingButtonScreen(modifier: Modifier = Modifier) {
                 color = Color.White
             )
         }
+
+        if (llmResult.isNotEmpty()) {
+            Spacer(modifier = Modifier.height(20.dp))
+            Text(
+                text = "LLM回答: $llmResult",
+                color = Color(0xFF4CAF50),
+                fontSize = 14.sp,
+                modifier = Modifier.padding(horizontal = 16.dp)
+            )
+        }
     }
 }
 
@@ -160,8 +219,9 @@ private fun isAccessibilityServiceEnabled(context: Context): Boolean {
     }
 }
 
-private fun startFloatingService(context: Context) {
+private fun startFloatingService(context: Context, llmQuestion: String = "") {
     val intent = Intent(context, FloatingWindowService::class.java)
+    intent.putExtra(FloatingWindowService.EXTRA_LLM_QUESTION, llmQuestion)
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
         context.startForegroundService(intent)
     } else {
