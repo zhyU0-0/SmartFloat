@@ -40,6 +40,7 @@ android {
 }
 
 dependencies {
+    implementation(files("libs/asr-one-sentence-release.aar"))
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.appcompat)
     implementation("androidx.localbroadcastmanager:localbroadcastmanager:1.0.0")

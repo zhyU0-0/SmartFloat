@@ -10,6 +10,8 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.provider.Settings
 import android.view.accessibility.AccessibilityManager
 import androidx.activity.ComponentActivity
@@ -17,21 +19,29 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -39,8 +49,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import androidx.localbroadcastmanager.content.LocalBroadcastManager
@@ -92,11 +105,37 @@ class MainActivity : ComponentActivity() {
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun FloatingButtonScreen(modifier: Modifier = Modifier, llmResult: String = "") {
     val context = LocalContext.current
+    val activity = context as? android.app.Activity
     var isFloatingShowing by remember { mutableStateOf(false) }
     var llmQuestion by remember { mutableStateOf("点击返回按钮") }
+    var isRecording by remember { mutableStateOf(false) }
+
+    val voiceRecognizer = remember(activity) {
+        activity?.let {
+            VoiceRecognizer(
+                activity = it
+            )
+        }
+    }
+
+    DisposableEffect(Unit) {
+        onDispose {
+            voiceRecognizer?.release()
+        }
+    }
+
+    val audioPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (granted) {
+            voiceRecognizer?.startRecording()
+            isRecording = true
+        }
+    }
 
     val notificationPermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission()
@@ -172,28 +211,123 @@ fun FloatingButtonScreen(modifier: Modifier = Modifier, llmResult: String = "") 
             maxLines = 3
         )
 
+        Spacer(modifier = Modifier.height(12.dp))
+
+        Row(
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            var longPressTriggered by remember { mutableStateOf(false) }
+
+            Box(
+                modifier = Modifier
+                    .pointerInput(Unit) {
+                        detectTapGestures(
+                            onLongPress = {
+                                longPressTriggered = true
+                                if (ContextCompat.checkSelfPermission(
+                                        context,
+                                        Manifest.permission.RECORD_AUDIO
+                                    ) == PackageManager.PERMISSION_GRANTED
+                                ) {
+                                    voiceRecognizer?.setCallbacks(
+                                        onResult = { text ->
+                                            llmQuestion = text
+                                            isRecording = false
+                                        },
+                                        onError = { }
+                                    )
+                                    voiceRecognizer?.startRecording()
+                                    isRecording = true
+                                } else {
+                                    audioPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                                }
+                            },
+                            onPress = {
+                                val released = tryAwaitRelease()
+                                if (released && longPressTriggered && isRecording) {
+                                    voiceRecognizer?.stopRecordingAndRecognize()
+                                    isRecording = false
+                                }
+                                longPressTriggered = false
+                            }
+                        )
+                    }
+            ) {
+                Card(
+                    colors = CardDefaults.cardColors(
+                        containerColor = if (isRecording) Color(0xFFE53935) else Color(0xFF03A9F4)
+                    )
+                ) {
+                    Text(
+                        text = if (isRecording) "录音中..." else "长按录音",
+                        color = Color.White,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 18.sp,
+                        modifier = Modifier.padding(horizontal = 24.dp, vertical = 12.dp)
+                    )
+                }
+            }
+
+            if (isRecording) {
+                Spacer(modifier = Modifier.width(12.dp))
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFF4CAF50)),
+                    modifier = Modifier.pointerInput(Unit) {
+                        detectTapGestures(
+                            onTap = {
+                                voiceRecognizer?.setCallbacks(
+                                    onResult = { text ->
+                                        llmQuestion = text
+                                        isRecording = false
+                                    },
+                                    onError = { }
+                                )
+                                voiceRecognizer?.stopRecordingAndRecognize()
+                                isRecording = false
+                            }
+                        )
+                    }
+                ) {
+                    Text(
+                        text = "停止并识别",
+                        color = Color.White,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 16.sp,
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp)
+                    )
+                }
+            }
+        }
+
         Spacer(modifier = Modifier.height(20.dp))
 
-        Button(
-            onClick = {
-                if (isFloatingShowing) {
-                    stopFloatingService(context)
-                    isFloatingShowing = false
-                } else {
-                    if (!Settings.canDrawOverlays(context)) {
-                        requestOverlayPermission(overlayPermissionLauncher)
-                    } else {
-                        tryStartService(context) { isFloatingShowing = true }
-                    }
-                }
-            },
-            colors = ButtonDefaults.buttonColors(
+        Card(
+            colors = CardDefaults.cardColors(
                 containerColor = if (isFloatingShowing) Color(0xFF888888) else Color(0xFF6200EE)
-            )
+            ),
+            modifier = Modifier.pointerInput(Unit) {
+                detectTapGestures(
+                    onTap = {
+                        if (isFloatingShowing) {
+                            stopFloatingService(context)
+                            isFloatingShowing = false
+                        } else {
+                            if (!Settings.canDrawOverlays(context)) {
+                                requestOverlayPermission(overlayPermissionLauncher)
+                            } else {
+                                tryStartService(context) { isFloatingShowing = true }
+                            }
+                        }
+                    }
+                )
+            }
         ) {
             Text(
                 text = if (isFloatingShowing) "隐藏悬浮按钮" else "显示悬浮按钮",
-                color = Color.White
+                color = Color.White,
+                fontWeight = FontWeight.Bold,
+                fontSize = 16.sp,
+                modifier = Modifier.padding(horizontal = 24.dp, vertical = 12.dp)
             )
         }
 
