@@ -1,5 +1,8 @@
 package com.zyy.smartfloat.prompt
 
+import android.content.Context
+import com.zyy.smartfloat.R
+
 
 
 data class LLmResponse(
@@ -17,8 +20,21 @@ data class LLmBody(
     val prompt: String,
     val question: String,
     val maxX: Int,
-    val maxY: Int
+    val maxY: Int,
+    val history: List<ProcessHistory>
+)
+
+data class ProcessHistory(
+    val process: String
 )
 
 
 //************************ 提示词 和 返回值 **********************//
+
+fun buildLlmPrompt(context: Context, tapPointsExample: String): String {
+    val rawResId = R.raw.llm_prompt
+    val template = context.resources.openRawResource(rawResId)
+        .bufferedReader()
+        .use { it.readText() }
+    return template.replace("{TAP_POINTS_EXAMPLE}", tapPointsExample)
+}

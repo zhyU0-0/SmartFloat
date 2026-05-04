@@ -21,6 +21,7 @@ import android.view.View
 import android.view.WindowManager
 import android.widget.FrameLayout
 import android.widget.Toast
+import androidx.annotation.RequiresApi
 import androidx.core.app.NotificationCompat
 import androidx.localbroadcastmanager.content.LocalBroadcastManager
 import com.google.gson.Gson
@@ -31,11 +32,14 @@ import com.zyy.smartfloat.network.LlmRequest
 import com.zyy.smartfloat.network.RetrofitClient
 import com.zyy.smartfloat.prompt.LLmBody
 import com.zyy.smartfloat.prompt.LLmResponse
+import com.zyy.smartfloat.prompt.ProcessHistory
 import com.zyy.smartfloat.prompt.TapPoints
+import com.zyy.smartfloat.prompt.buildLlmPrompt
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
@@ -265,80 +269,109 @@ class FloatingWindowService : Service() {
 
     private var llmQuestion = "点击返回按钮"
 
+    @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
     private fun sendToLlm(imageUrl: String) {
         serviceScope.launch {
-            val lLmResponse = LLmResponse(listOf(TapPoints(1.0, 10.0, 100)),"用户最终指令",false,"简短的执行细节")
-            val gson = Gson()
-            val json = gson.toJson(lLmResponse)
-            val llmPrompt = "你是专业的坐标测定和点击操作工具，严格按以下规则执行：\n" +
-                    "\n" +
-                    "1. 坐标系：根据图中红色的网格和数值确定坐标\n" +
-                    "   原点：图片左上角 (0,0)\n" +
-                    "   X轴：从左到右 0~maxX\n" +
-                    "   Y轴：从上到下 0~maxY\n" +
-                    "\n" +
-                    "2. 定位规则\n" +
-                    "   - 先在图中找到用户指定的目标\n" +
-                    "   - 根据图中标注的红色的网格和数值，确定目标的x和y作为tapX和tapY" +
-                    "   - 坐标必须为整数\n" +
-                    "   - 禁止凭经验猜测，必须基于当前图片真实位置\n" +
-                    "\n" +
-                    "3. 输出格式"+json +
-                    "\n" +"4. remark就显示一简短的结果，isEnd就是任务是否完成，command就是用户的指令"
-            val llmBody = LLmBody(llmPrompt, llmQuestion, screenWidth, screenHeight)
+            val history = mutableListOf<ProcessHistory>()
+            var currentImageUrl = imageUrl
+            var loopCount = 0
+            val maxLoops = 20
 
-            try {
-                val apiKey = getString(R.string.llm_api_key)
-                val model = getString(R.string.llm_model)
+            while (loopCount < maxLoops) {
+                loopCount++
+                Log.d(TAG, "=== LLM循环第${loopCount}轮 ===")
 
-                val request = LlmRequest(
-                    model = model,
-                    messages = listOf(
-                        LlmMessage(
-                            role = "user",
-                            content = listOf(
-                                LlmContent(
-                                    type = "image_url",
-                                    image_url = ImageUrl(url = imageUrl)
-                                ),
-                                LlmContent(
-                                    type = "text",
-                                    text = gson.toJson(llmBody)
+                val lLmResponseExample = LLmResponse(
+                    listOf(TapPoints(1.0, 10.0, 100)),
+                    "用户指令",
+                    false,
+                    "简短的执行细节"
+                )
+                val gson = Gson()
+                val json = gson.toJson(lLmResponseExample)
+                val llmPrompt = buildLlmPrompt(this@FloatingWindowService, json)
+                val llmBody = LLmBody(llmPrompt, llmQuestion, screenWidth, screenHeight, history)
+
+                try {
+                    val apiKey = getString(R.string.llm_api_key)
+                    val model = getString(R.string.llm_model)
+
+                    val request = LlmRequest(
+                        model = model,
+                        messages = listOf(
+                            LlmMessage(
+                                role = "user",
+                                content = listOf(
+                                    LlmContent(
+                                        type = "image_url",
+                                        image_url = ImageUrl(url = currentImageUrl)
+                                    ),
+                                    LlmContent(
+                                        type = "text",
+                                        text = gson.toJson(llmBody)
+                                    )
                                 )
                             )
                         )
                     )
-                )
 
-                val response = RetrofitClient.llmApi.chatCompletion(
-                    auth = "Bearer $apiKey",
-                    request = request
-                )
-
-                val answer = response.choices.firstOrNull()?.message?.content?:"返回：null"
-                Log.d(TAG, "LLM response: $answer")
-                val llmResponse = gson.fromJson(answer, LLmResponse::class.java)
-
-                llmResponse?.tapPoints?.forEach { tapPoint ->
-                    Log.d(TAG, "执行点击: x=${tapPoint.tapX}, y=${tapPoint.tapY}, delay=${tapPoint.delay}")
-                    TapAccessibilityService.instance?.simulateTap(
-                        tapPoint.tapX.toFloat(),
-                        tapPoint.tapY.toFloat(),
-                        tapPoint.delay.toLong(),
-                        1
+                    val response = RetrofitClient.llmApi.chatCompletion(
+                        auth = "Bearer $apiKey",
+                        request = request
                     )
-                }
 
-                withContext(Dispatchers.Main) {
-                    Toast.makeText(this@FloatingWindowService, "LLM回答: ${llmResponse?.remark ?: answer}", Toast.LENGTH_LONG).show()
-                }
+                    val answer = response.choices.firstOrNull()?.message?.content ?: "返回：null"
+                    Log.d(TAG, "LLM response: $answer")
+                    val llmResponse = gson.fromJson(answer, LLmResponse::class.java)
 
-                sendLlmResultToActivity(llmResponse?.remark ?: answer)
-            } catch (e: Exception) {
-                Log.e(TAG, "sendToLlm failed: ${e.message}", e)
-                withContext(Dispatchers.Main) {
-                    Toast.makeText(this@FloatingWindowService, "LLM请求失败: ${e.message}", Toast.LENGTH_LONG).show()
+                    llmResponse?.tapPoints?.forEach { tapPoint ->
+                        Log.d(TAG, "执行点击: x=${tapPoint.tapX}, y=${tapPoint.tapY}, delay=${tapPoint.delay}")
+                        TapAccessibilityService.instance?.simulateTap(
+                            tapPoint.tapX.toFloat(),
+                            tapPoint.tapY.toFloat(),
+                            tapPoint.delay.toLong(),
+                            1
+                        )
+                    }
+
+                    withContext(Dispatchers.Main) {
+                        Toast.makeText(this@FloatingWindowService, "LLM: ${llmResponse?.remark ?: answer}", Toast.LENGTH_SHORT).show()
+                    }
+
+                    if (llmResponse?.isEnd == true) {
+                        sendLlmResultToActivity(llmResponse.remark ?: answer)
+                        Log.d(TAG, "任务完成")
+                        break
+                    }
+
+                    llmResponse?.remark?.let {
+                        history.add(ProcessHistory(it))
+                    }
+
+                    if (loopCount < maxLoops) {
+                        delay(1500)
+                        val bitmap = TapAccessibilityService.instance?.captureScreenshot()
+                        if (bitmap != null) {
+                            val file = saveBitmapToFile(bitmap)
+                            currentImageUrl = uploadScreenshot(file)
+                            Log.d(TAG, "重新截图上传: $currentImageUrl")
+                        } else {
+                            Log.e(TAG, "重新截图失败")
+                            break
+                        }
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "sendToLlm第${loopCount}轮失败: ${e.message}", e)
+                    withContext(Dispatchers.Main) {
+                        Toast.makeText(this@FloatingWindowService, "LLM请求失败: ${e.message}", Toast.LENGTH_LONG).show()
+                    }
+                    break
                 }
+            }
+
+            if (loopCount >= maxLoops) {
+                Log.w(TAG, "达到最大循环次数$maxLoops，强制结束")
+                sendLlmResultToActivity("任务执行达到最大循环次数")
             }
         }
     }
