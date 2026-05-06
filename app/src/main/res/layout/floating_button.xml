@@ -1,14 +1,67 @@
 <?xml version="1.0" encoding="utf-8"?>
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
-    android:layout_width="match_parent"
+    android:layout_width="wrap_content"
     android:layout_height="match_parent"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_gravity="center"
     android:elevation="8dp">
-    <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
-        android:id="@+id/floating_red_button"
-        android:layout_width="60dp"
+    <LinearLayout
+
+        android:layout_width="wrap_content"
         android:layout_height="60dp"
         android:layout_gravity="center"
-        android:background="@drawable/floating_button_bg"
-        android:elevation="8dp" />
+        android:elevation="8dp"
+        android:minWidth="60dp"
+        android:paddingHorizontal="16dp"
+        android:orientation="horizontal"
+        android:gravity="center">
+        <androidx.cardview.widget.CardView
+            android:id="@+id/floating_red_button"
+            android:layout_width="wrap_content"
+            android:layout_height="60dp"
+            app:cardBackgroundColor="#03A9F4"
+            android:minWidth="60dp"
+            app:cardCornerRadius="30dp"
+            app:cardElevation="0dp">
+            <LinearLayout
+                android:layout_width="wrap_content"
+                android:orientation="horizontal"
+                android:layout_gravity="center"
+                android:layout_height="wrap_content">
+                <ImageView
+                    android:padding="10dp"
+                    android:layout_gravity="center"
+                    android:maxWidth="60dp"
+                    android:maxHeight="60dp"
+                    android:src="@drawable/ic_submit"
+                    android:id="@+id/submit_floating_text_button"
+                    android:layout_height="60dp"
+                    android:layout_width="60dp"
+                    app:tint="#FFFFFF" />
+                <TextView
+                    android:layout_marginLeft="10dp"
+                    android:layout_marginRight="10dp"
+                    android:layout_gravity="center"
+                    android:id="@+id/floating_text"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="🎤"
+                    android:textColor="@android:color/white"
+                    android:textSize="18sp"
+                    android:ellipsize="end"/>
+                <ImageView
+                    android:padding="15dp"
+                    android:layout_gravity="center"
+                    android:maxWidth="60dp"
+                    android:maxHeight="60dp"
+                    android:src="@drawable/ic_clean"
+                    android:id="@+id/clean_floating_text_button"
+                    android:layout_height="60dp"
+                    android:layout_width="60dp"
+                    app:tint="#FFFFFF" />
+            </LinearLayout>
+
+
+        </androidx.cardview.widget.CardView>
+    </LinearLayout>
 </FrameLayout>

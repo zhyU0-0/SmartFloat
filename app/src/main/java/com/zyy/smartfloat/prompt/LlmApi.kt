@@ -25,11 +25,10 @@ data class LLmBody(
 )
 
 data class ProcessHistory(
-    val process: String
+    val process: String,
+    val TapPoints: List<TapPoints>
 )
 
-
-//************************ 提示词 和 返回值 **********************//
 
 fun buildLlmPrompt(context: Context, tapPointsExample: String): String {
     val rawResId = R.raw.llm_prompt

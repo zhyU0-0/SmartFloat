@@ -6,22 +6,29 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.PixelFormat
 import android.os.Build
+import android.os.Handler
 import android.os.IBinder
+import android.os.Looper
 import android.util.Log
 import android.view.Gravity
 import android.view.LayoutInflater
 import android.view.MotionEvent
 import android.view.View
 import android.view.WindowManager
-import android.widget.FrameLayout
+import android.widget.ImageView
+import android.widget.LinearLayout
+import android.widget.TextView
 import android.widget.Toast
 import androidx.annotation.RequiresApi
+import androidx.cardview.widget.CardView
+import androidx.core.app.ActivityCompat
 import androidx.core.app.NotificationCompat
 import androidx.localbroadcastmanager.content.LocalBroadcastManager
 import com.google.gson.Gson
@@ -63,6 +70,20 @@ class FloatingWindowService : Service() {
     private var screenWidth = 0
     private var screenHeight = 0
 
+    // 语音识别相关 - 使用 VoiceRecognizer 封装类
+    private var voiceRecognizer: VoiceRecognizer? = null
+    private var isRecording = false
+    private var longPressTriggered = false
+    private val LONG_PRESS_THRESHOLD = 500L // 长按阈值500ms
+    private val mainHandler = Handler(Looper.getMainLooper())
+    private var floatingText: TextView? = null
+    private var cleanButton: ImageView? = null
+    private var submitButton: ImageView? = null
+    private var recognizedText: String = ""
+    private var isProcessing = false
+    
+    // 用于接收从 Intent 传递的问题
+    private var llmQuestion: String = ""
 
     companion object {
         const val CHANNEL_ID = "floating_window_channel"
@@ -186,7 +207,26 @@ class FloatingWindowService : Service() {
             val inflater = LayoutInflater.from(applicationContext)
             floatView = inflater.inflate(R.layout.floating_button, null)
 
-            val redButton = floatView!!.findViewById<FrameLayout>(R.id.floating_red_button)
+            floatingText = floatView!!.findViewById(R.id.floating_text)
+            cleanButton = floatView!!.findViewById(R.id.clean_floating_text_button)
+            submitButton = floatView!!.findViewById(R.id.submit_floating_text_button)
+            updateFloatingText()
+
+            cleanButton?.setOnClickListener {
+                if (recognizedText.isNotEmpty()) {
+                    recognizedText = ""
+                    updateFloatingText()
+                }
+            }
+
+            submitButton?.setOnClickListener {
+                if (recognizedText.isNotEmpty()) {
+                    Toast.makeText(this@FloatingWindowService, "截图上传中...", Toast.LENGTH_SHORT).show()
+                    captureAndUpload()
+                }
+            }
+
+            val redButton = floatView!!.findViewById<CardView>(R.id.floating_red_button)
             redButton.setOnTouchListener { _, event ->
                 when (event.action) {
                     MotionEvent.ACTION_DOWN -> {
@@ -194,6 +234,9 @@ class FloatingWindowService : Service() {
                         initialY = layoutParams.y
                         initialTouchX = event.rawX
                         initialTouchY = event.rawY
+                        longPressTriggered = false
+                        // 启动长按检测
+                        mainHandler.postDelayed(longPressRunnable, LONG_PRESS_THRESHOLD)
                         true
                     }
                     MotionEvent.ACTION_MOVE -> {
@@ -204,11 +247,14 @@ class FloatingWindowService : Service() {
                         true
                     }
                     MotionEvent.ACTION_UP -> {
+                        mainHandler.removeCallbacks(longPressRunnable)
+                        
                         val deltaX = Math.abs(event.rawX - initialTouchX)
                         val deltaY = Math.abs(event.rawY - initialTouchY)
-                        if (deltaX < 10 && deltaY < 10) {
-                            Toast.makeText(this@FloatingWindowService, "截图上传中...", Toast.LENGTH_SHORT).show()
-                            captureAndUpload()
+
+                        if (longPressTriggered && isRecording) {
+                            // 停止录音并识别
+                            stopRecordingAndRecognize()
                         }
                         true
                     }
@@ -224,7 +270,85 @@ class FloatingWindowService : Service() {
         }
     }
 
+    private val longPressRunnable = Runnable {
+        if (!isRecording && recognizedText.isEmpty() && !isProcessing) {
+            startRecording()
+        }
+    }
+
+    private fun startRecording() {
+        if (ActivityCompat.checkSelfPermission(this, android.Manifest.permission.RECORD_AUDIO) 
+            != PackageManager.PERMISSION_GRANTED) {
+            Log.e(TAG, "录音权限未授予")
+            return
+        }
+
+        voiceRecognizer = VoiceRecognizer(this)
+        voiceRecognizer?.setCallbacks(
+            onResult = { text ->
+                Log.d(TAG, "语音识别结果: $text")
+                recognizedText = text
+                isRecording = false
+                mainHandler.post {
+                    updateFloatingText()
+                    resetButtonColor()
+                }
+            },
+            onError = { error ->
+                Log.e(TAG, "语音识别失败: $error")
+                isRecording = false
+                mainHandler.post {
+                    resetButtonColor()
+                    floatingText?.text = "🎤"
+                }
+            },
+            onStart = {
+                Log.d(TAG, "开始录音")
+                isRecording = true
+                longPressTriggered = true
+                mainHandler.post {
+                    // 改变按钮背景为红色表示录音中
+                    floatView?.findViewById<CardView>(R.id.floating_red_button)?.setCardBackgroundColor(
+                            Color.parseColor("#E53935")
+                        )
+                }
+            }
+        )
+        
+        voiceRecognizer?.startRecording()
+    }
+
+    private fun stopRecordingAndRecognize() {
+        Log.d(TAG, "stopRecordingAndRecognize: 停止录音并识别")
+        try {
+            voiceRecognizer?.stopRecordingAndRecognize()
+        } catch (e: Exception) {
+            Log.e(TAG, "stopRecordingAndRecognize: 停止失败, error=${e.message}", e)
+            isRecording = false
+            resetButtonColor()
+        }
+    }
+
+    private fun updateFloatingText() {
+        if (recognizedText.isNotEmpty()) {
+            floatingText?.text = recognizedText
+            cleanButton?.visibility = View.VISIBLE
+            submitButton?.visibility = View.VISIBLE
+        } else {
+            floatingText?.text = "🎤"
+            cleanButton?.visibility = View.GONE
+            submitButton?.visibility = View.GONE
+        }
+    }
+
+    private fun resetButtonColor() {
+        floatView?.findViewById<CardView>(R.id.floating_red_button)?.setCardBackgroundColor(
+            Color.parseColor("#03A9F4")
+        )
+    }
+
     private fun captureAndUpload() {
+        isProcessing = true
         serviceScope.launch {
             try {
                 val a11yService = TapAccessibilityService.instance
@@ -257,20 +381,25 @@ class FloatingWindowService : Service() {
                     Toast.makeText(this@FloatingWindowService, "上传成功: $imageUrl", Toast.LENGTH_LONG).show()
                 }
 
-                sendToLlm(imageUrl)
+                sendToLlm(imageUrl, recognizedText)
+                
+                // 上传完成后清空识别文本，以便下次重新录音
+                mainHandler.post {
+                    recognizedText = ""
+                    updateFloatingText()
+                }
             } catch (e: Exception) {
                 Log.e(TAG, "captureAndUpload failed: ${e.message}", e)
                 withContext(Dispatchers.Main) {
                     Toast.makeText(this@FloatingWindowService, "截图上传失败: ${e.message}", Toast.LENGTH_LONG).show()
                 }
+                isProcessing = false
             }
         }
     }
 
-    private var llmQuestion = "点击返回按钮"
-
     @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
-    private fun sendToLlm(imageUrl: String) {
+    private fun sendToLlm(imageUrl: String, question: String) {
         serviceScope.launch {
             val history = mutableListOf<ProcessHistory>()
             var currentImageUrl = imageUrl
@@ -290,7 +419,7 @@ class FloatingWindowService : Service() {
                 val gson = Gson()
                 val json = gson.toJson(lLmResponseExample)
                 val llmPrompt = buildLlmPrompt(this@FloatingWindowService, json)
-                val llmBody = LLmBody(llmPrompt, llmQuestion, screenWidth, screenHeight, history)
+                val llmBody = LLmBody(llmPrompt, question, screenWidth, screenHeight, history)
 
                 try {
                     val apiKey = getString(R.string.llm_api_key)
@@ -341,11 +470,12 @@ class FloatingWindowService : Service() {
                     if (llmResponse?.isEnd == true) {
                         sendLlmResultToActivity(llmResponse.remark ?: answer)
                         Log.d(TAG, "任务完成")
+                        isProcessing = false
                         break
                     }
 
                     llmResponse?.remark?.let {
-                        history.add(ProcessHistory(it))
+                        history.add(ProcessHistory(it,llmResponse.tapPoints))
                     }
 
                     if (loopCount < maxLoops) {
@@ -373,6 +503,8 @@ class FloatingWindowService : Service() {
                 Log.w(TAG, "达到最大循环次数$maxLoops，强制结束")
                 sendLlmResultToActivity("任务执行达到最大循环次数")
             }
+            
+            isProcessing = false
         }
     }
 

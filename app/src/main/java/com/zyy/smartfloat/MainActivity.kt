@@ -10,8 +10,6 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
-import android.os.Handler
-import android.os.Looper
 import android.provider.Settings
 import android.view.accessibility.AccessibilityManager
 import androidx.activity.ComponentActivity
@@ -31,8 +29,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
@@ -43,6 +41,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -54,31 +53,31 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import androidx.localbroadcastmanager.content.LocalBroadcastManager
-import com.zyy.smartfloat.ui.theme.SmartFloatTheme
+
 
 class MainActivity : ComponentActivity() {
 
-    private var llmResult: String = ""
     private val receiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             if (intent?.action == FloatingWindowService.ACTION_LLM_RESULT) {
-                llmResult = intent.getStringExtra(FloatingWindowService.EXTRA_LLM_RESULT) ?: ""
-                setContent {
-                    SmartFloatTheme {
-                        Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
-                            FloatingButtonScreen(
-                                modifier = Modifier.padding(innerPadding),
-                                llmResult = llmResult
-                            )
+                val result = intent.getStringExtra(FloatingWindowService.EXTRA_LLM_RESULT) ?: ""
+                if (result.isNotEmpty()) {
+                    synchronized(this@MainActivity) {
+                        llmResult.value = result
+                        if (currentInstruction.value.isNotEmpty()) {
+                            instructionRecords.add(0, InstructionRecord(currentInstruction.value, result))
                         }
                     }
                 }
             }
         }
     }
+
+    private val llmResult = mutableStateOf("")
+    private val currentInstruction = mutableStateOf("")
+    private val instructionRecords = mutableStateListOf<InstructionRecord>()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -88,13 +87,15 @@ class MainActivity : ComponentActivity() {
             IntentFilter(FloatingWindowService.ACTION_LLM_RESULT)
         )
         setContent {
-            SmartFloatTheme {
-                Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
-                    FloatingButtonScreen(
-                        modifier = Modifier.padding(innerPadding),
-                        llmResult = llmResult
-                    )
-                }
+            Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
+                FloatingButtonScreen(
+                    modifier = Modifier.padding(innerPadding),
+                    llmResult = llmResult.value,
+                    instructionRecords = instructionRecords,
+                    onStartFloating = { instruction ->
+                        currentInstruction.value = instruction
+                    }
+                )
             }
         }
     }
@@ -107,7 +108,12 @@ class MainActivity : ComponentActivity() {
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun FloatingButtonScreen(modifier: Modifier = Modifier, llmResult: String = "") {
+fun FloatingButtonScreen(
+    modifier: Modifier = Modifier,
+    llmResult: String = "",
+    instructionRecords: List<InstructionRecord> = emptyList(),
+    onStartFloating: (String) -> Unit = {}
+) {
     val context = LocalContext.current
     val activity = context as? android.app.Activity
     var isFloatingShowing by remember { mutableStateOf(false) }
@@ -117,7 +123,7 @@ fun FloatingButtonScreen(modifier: Modifier = Modifier, llmResult: String = "") 
     val voiceRecognizer = remember(activity) {
         activity?.let {
             VoiceRecognizer(
-                activity = it
+                context = it
             )
         }
     }
@@ -151,6 +157,7 @@ fun FloatingButtonScreen(modifier: Modifier = Modifier, llmResult: String = "") 
     ) { /* user may or may not have enabled it */ }
 
     val tryStartService: (Context, () -> Unit) -> Unit = { ctx, onReady ->
+        onStartFloating(llmQuestion)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
             ContextCompat.checkSelfPermission(
                 ctx, Manifest.permission.POST_NOTIFICATIONS
@@ -339,6 +346,51 @@ fun FloatingButtonScreen(modifier: Modifier = Modifier, llmResult: String = "") 
                 fontSize = 14.sp,
                 modifier = Modifier.padding(horizontal = 16.dp)
             )
+        }
+
+        Spacer(modifier = Modifier.height(20.dp))
+
+        if (instructionRecords.isNotEmpty()) {
+            Text(
+                text = "历史记录",
+                fontSize = 16.sp,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.padding(horizontal = 16.dp)
+            )
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(200.dp)
+                    .padding(horizontal = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                items(instructionRecords) { record ->
+                    Card(
+                        colors = CardDefaults.cardColors(
+                            containerColor = Color(0xFFF5F5F5)
+                        ),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(modifier = Modifier.padding(12.dp)) {
+                            Text(
+                                text = "指令: ${record.instruction}",
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Medium,
+                                color = Color(0xFF333333)
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = "结果: ${record.remark}",
+                                fontSize = 13.sp,
+                                color = Color(0xFF666666)
+                            )
+                        }
+                    }
+                }
+            }
         }
     }
 }
