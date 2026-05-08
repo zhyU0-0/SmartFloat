@@ -24,28 +24,22 @@
             android:name=".MainActivity"
             android:exported="true"
             android:label="@string/title_activity_main"
+            android:launchMode="singleTask"
             android:theme="@style/Theme.SmartFloat">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
+
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
-
-        <activity
-            android:name=".VoiceRecognitionActivity"
-            android:exported="false"
-            android:theme="@android:style/Theme.Translucent.NoTitleBar.Fullscreen"
-            android:launchMode="singleInstance" />
-
         <service
             android:name=".FloatingWindowService"
             android:exported="false"
-            android:foregroundServiceType="specialUse" >
+            android:foregroundServiceType="specialUse">
             <property
                 android:name="android.foreground_service_type_special_use"
                 android:value="悬浮窗显示服务" />
         </service>
-
         <service
             android:name=".TapAccessibilityService"
             android:exported="true"
@@ -53,6 +47,7 @@
             <intent-filter>
                 <action android:name="android.accessibilityservice.AccessibilityService" />
             </intent-filter>
+
             <meta-data
                 android:name="android.accessibilityservice"
                 android:resource="@xml/accessibility_service_config" />

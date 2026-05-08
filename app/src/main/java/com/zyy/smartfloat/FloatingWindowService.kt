@@ -69,6 +69,7 @@ class FloatingWindowService : Service() {
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var screenWidth = 0
     private var screenHeight = 0
+    val maxLoops = 100
 
     // 语音识别相关 - 使用 VoiceRecognizer 封装类
     private var voiceRecognizer: VoiceRecognizer? = null
@@ -81,8 +82,8 @@ class FloatingWindowService : Service() {
     private var submitButton: ImageView? = null
     private var recognizedText: String = ""
     private var isProcessing = false
-    private var lastTapX: Double = -1.0
-    private var lastTapY: Double = -1.0
+    // 记录上一轮AI返回的所有点击坐标
+    private var lastTapPoints = mutableListOf<TapPoints>()
     private var redButton: CardView? = null
     
     // 用于接收从 Intent 传递的问题
@@ -94,8 +95,12 @@ class FloatingWindowService : Service() {
         const val ACTION_STOP = "com.zyy.smartfloat.STOP_SERVICE"
         const val ACTION_LLM_RESULT = "com.zyy.smartfloat.LLM_RESULT"
         const val ACTION_TASK_START = "com.zyy.smartfloat.TASK_START"
+        const val ACTION_VOICE_RECOGNITION = "com.zyy.smartfloat.VOICE_RECOGNITION"
+        const val ACTION_IMAGE_RECOGNITION = "com.zyy.smartfloat.IMAGE_RECOGNITION"
         const val EXTRA_LLM_RESULT = "extra_llm_result"
         const val EXTRA_LLM_QUESTION = "extra_llm_question"
+        const val EXTRA_VOICE_TEXT = "extra_voice_text"
+        const val EXTRA_IMAGE_TEXT = "extra_image_text"
         private const val TAG = "FloatingWindowService"
     }
 
@@ -293,7 +298,9 @@ class FloatingWindowService : Service() {
             onResult = { text ->
                 Log.d(TAG, "语音识别结果: $text")
                 recognizedText = text
+                recognizedText = "帮我完成测试"
                 isRecording = false
+                sendVoiceRecognitionResult(text)
                 mainHandler.post {
                     updateFloatingText()
                     resetButtonColor()
@@ -354,6 +361,8 @@ class FloatingWindowService : Service() {
 
     private fun captureAndUpload() {
         isProcessing = true
+        // 清空上一轮的点击坐标，开始新的一轮
+        lastTapPoints.clear()
         serviceScope.launch {
             try {
                 val a11yService = TapAccessibilityService.instance
@@ -418,7 +427,7 @@ class FloatingWindowService : Service() {
             val history = mutableListOf<ProcessHistory>()
             var currentImageUrl = imageUrl
             var loopCount = 0
-            val maxLoops = 20
+
 
             while (loopCount < maxLoops) {
                 loopCount++
@@ -469,8 +478,8 @@ class FloatingWindowService : Service() {
 
                     llmResponse?.tapPoints?.forEach { tapPoint ->
                         Log.d(TAG, "执行点击: x=${tapPoint.tapX}, y=${tapPoint.tapY}, delay=${tapPoint.delay}")
-                        lastTapX = tapPoint.tapX
-                        lastTapY = tapPoint.tapY
+                        // 将点击坐标添加到列表中
+                        lastTapPoints.add(tapPoint)
                         TapAccessibilityService.instance?.simulateTap(
                             tapPoint.tapX.toFloat(),
                             tapPoint.tapY.toFloat(),
@@ -539,6 +548,12 @@ class FloatingWindowService : Service() {
         LocalBroadcastManager.getInstance(this).sendBroadcast(intent)
     }
 
+    private fun sendVoiceRecognitionResult(text: String) {
+        val intent = Intent(ACTION_VOICE_RECOGNITION)
+        intent.putExtra(EXTRA_VOICE_TEXT, text)
+        LocalBroadcastManager.getInstance(this).sendBroadcast(intent)
+    }
+
 
     private fun scaleDown(bitmap: Bitmap, maxWidth: Int = 540, maxHeight: Int = 1200): Bitmap {
         val width = bitmap.width
@@ -557,7 +572,7 @@ class FloatingWindowService : Service() {
         return android.graphics.BitmapFactory.decodeStream(bais)!!
     }
 
-    private fun addGridAndCoordinates(bitmap: Bitmap, origWidth: Int, origHeight: Int, lastTapX: Double = -1.0, lastTapY: Double = -1.0): Bitmap {
+    private fun addGridAndCoordinates(bitmap: Bitmap, origWidth: Int, origHeight: Int, tapPoints: List<TapPoints> = emptyList()): Bitmap {
         val width = bitmap.width
         val height = bitmap.height
         val scaleX = width.toFloat() / origWidth
@@ -611,12 +626,22 @@ class FloatingWindowService : Service() {
         canvas.drawText("(0, $origHeight)", 5f, (height - 4).toFloat(), paint)
         canvas.drawText("($origWidth, $origHeight)", (width - cornerTextSize * 6).toFloat(), (height - 4).toFloat(), paint)
 
-        if (lastTapX >= 0 && lastTapY >= 0) {
-            val tapPx = lastTapX.toFloat() * scaleX
-            val tapPy = lastTapY.toFloat() * scaleY
+        // 绘制所有点击坐标
+        tapPoints.forEachIndexed { index, tapPoint ->
+            val tapPx = tapPoint.tapX.toFloat() * scaleX
+            val tapPy = tapPoint.tapY.toFloat() * scaleY
+            
+            // 绘制点击点（红色半透明圆圈）
             paint.color = Color.parseColor("#88FF0000")
             paint.style = Paint.Style.FILL
             canvas.drawCircle(tapPx, tapPy, 15f, paint)
+            
+            // 绘制点击序号
+            paint.color = Color.WHITE
+            paint.textSize = 16f
+            paint.style = Paint.Style.FILL
+            val textWidth = paint.measureText("${index + 1}")
+            canvas.drawText("${index + 1}", tapPx - textWidth / 2, tapPy + 5, paint)
         }
 
         return mutableBitmap
@@ -628,7 +653,8 @@ class FloatingWindowService : Service() {
         val scaledBitmap = scaleDown(bitmap)
         val compressedBitmap = compressToLowQuality(scaledBitmap)
         if (scaledBitmap !== bitmap) scaledBitmap.recycle()
-        val bitmapWithGrid = addGridAndCoordinates(compressedBitmap, origWidth, origHeight, lastTapX, lastTapY)
+        // 绘制上一轮AI返回的所有点击坐标
+        val bitmapWithGrid = addGridAndCoordinates(compressedBitmap, origWidth, origHeight, lastTapPoints)
         compressedBitmap.recycle()
         val dir = cacheDir
         val file = File(dir, "smartFloat.png")

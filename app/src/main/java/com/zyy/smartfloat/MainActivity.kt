@@ -62,6 +62,8 @@ class MainActivity : ComponentActivity() {
     private val llmResult = mutableStateListOf<String>()
     private val currentInstruction = mutableStateOf("")
     private val instructionRecords = mutableStateListOf<InstructionRecord>()
+    private val imageRecognitionResult = mutableStateOf("")
+    private val llmQuestion = mutableStateOf("点击返回按钮")
 
     private val receiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
@@ -82,6 +84,14 @@ class MainActivity : ComponentActivity() {
                 }
                 FloatingWindowService.ACTION_TASK_START -> {
                     llmResult.clear()
+                    imageRecognitionResult.value = ""
+                }
+                FloatingWindowService.ACTION_VOICE_RECOGNITION -> {
+                    val text = intent.getStringExtra(FloatingWindowService.EXTRA_VOICE_TEXT) ?: ""
+                    if (text.isNotEmpty()) {
+                        llmQuestion.value = text
+                        currentInstruction.value = text
+                    }
                 }
             }
         }
@@ -95,6 +105,8 @@ class MainActivity : ComponentActivity() {
             IntentFilter().apply {
                 addAction(FloatingWindowService.ACTION_LLM_RESULT)
                 addAction(FloatingWindowService.ACTION_TASK_START)
+                addAction(FloatingWindowService.ACTION_VOICE_RECOGNITION)
+                addAction(FloatingWindowService.ACTION_IMAGE_RECOGNITION)
             }
         )
         setContent {
@@ -103,6 +115,8 @@ class MainActivity : ComponentActivity() {
                     modifier = Modifier.padding(innerPadding),
                     llmResult = llmResult.toList(),
                     instructionRecords = instructionRecords,
+                    imageRecognitionResult = imageRecognitionResult.value,
+                    llmQuestion = llmQuestion.value,
                     onStartFloating = { instruction ->
                         currentInstruction.value = instruction
                     }
@@ -123,13 +137,20 @@ fun FloatingButtonScreen(
     modifier: Modifier = Modifier,
     llmResult: List<String> = emptyList(),
     instructionRecords: List<InstructionRecord> = emptyList(),
+    imageRecognitionResult: String = "",
+    llmQuestion: String = "点击返回按钮",
     onStartFloating: (String) -> Unit = {}
 ) {
     val context = LocalContext.current
     val activity = context as? android.app.Activity
     var isFloatingShowing by remember { mutableStateOf(false) }
-    var llmQuestion by remember { mutableStateOf("点击返回按钮") }
+    var localQuestion by remember { mutableStateOf(llmQuestion) }
     var isRecording by remember { mutableStateOf(false) }
+
+    DisposableEffect(llmQuestion) {
+        localQuestion = llmQuestion
+        onDispose { }
+    }
 
     val voiceRecognizer = remember(activity) {
         activity?.let {
@@ -158,7 +179,7 @@ fun FloatingButtonScreen(
         contract = ActivityResultContracts.RequestPermission()
     ) { granted ->
         if (granted) {
-            startFloatingService(context, llmQuestion)
+            startFloatingService(context, localQuestion)
             isFloatingShowing = true
         }
     }
@@ -168,7 +189,7 @@ fun FloatingButtonScreen(
     ) { /* user may or may not have enabled it */ }
 
     val tryStartService: (Context, () -> Unit) -> Unit = { ctx, onReady ->
-        onStartFloating(llmQuestion)
+        onStartFloating(localQuestion)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
             ContextCompat.checkSelfPermission(
                 ctx, Manifest.permission.POST_NOTIFICATIONS
@@ -176,7 +197,7 @@ fun FloatingButtonScreen(
         ) {
             notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
         } else {
-            startFloatingService(ctx, llmQuestion)
+            startFloatingService(ctx, localQuestion)
             onReady()
         }
     }
@@ -219,8 +240,8 @@ fun FloatingButtonScreen(
         Spacer(modifier = Modifier.height(20.dp))
 
         OutlinedTextField(
-            value = llmQuestion,
-            onValueChange = { llmQuestion = it },
+            value = localQuestion,
+            onValueChange = { localQuestion = it },
             label = { Text("LLM指令") },
             placeholder = { Text("例如：点击返回按钮") },
             modifier = Modifier
@@ -236,7 +257,7 @@ fun FloatingButtonScreen(
         ) {
             var longPressTriggered by remember { mutableStateOf(false) }
 
-            Box(
+            /*Box(
                 modifier = Modifier
                     .pointerInput(Unit) {
                         detectTapGestures(
@@ -249,7 +270,7 @@ fun FloatingButtonScreen(
                                 ) {
                                     voiceRecognizer?.setCallbacks(
                                         onResult = { text ->
-                                            llmQuestion = text
+                                            localQuestion = text
                                             isRecording = false
                                         },
                                         onError = { }
@@ -284,37 +305,7 @@ fun FloatingButtonScreen(
                         modifier = Modifier.padding(horizontal = 24.dp, vertical = 12.dp)
                     )
                 }
-            }
-
-            if (isRecording) {
-                Spacer(modifier = Modifier.width(12.dp))
-                Card(
-                    colors = CardDefaults.cardColors(containerColor = Color(0xFF4CAF50)),
-                    modifier = Modifier.pointerInput(Unit) {
-                        detectTapGestures(
-                            onTap = {
-                                voiceRecognizer?.setCallbacks(
-                                    onResult = { text ->
-                                        llmQuestion = text
-                                        isRecording = false
-                                    },
-                                    onError = { }
-                                )
-                                voiceRecognizer?.stopRecordingAndRecognize()
-                                isRecording = false
-                            }
-                        )
-                    }
-                ) {
-                    Text(
-                        text = "停止并识别",
-                        color = Color.White,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 16.sp,
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp)
-                    )
-                }
-            }
+            }*/
         }
 
         Spacer(modifier = Modifier.height(20.dp))
@@ -422,7 +413,6 @@ fun FloatingButtonScreen(
         }
     }
 }
-
 private fun isAccessibilityServiceEnabled(context: Context): Boolean {
     val am = context.getSystemService(Context.ACCESSIBILITY_SERVICE) as AccessibilityManager
     val enabledServices = am.getEnabledAccessibilityServiceList(

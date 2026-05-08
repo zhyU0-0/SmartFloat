@@ -7,4 +7,5 @@
     <string name="show_floating_button">显示悬浮按钮</string>
     <string name="hide_floating_button">隐藏悬浮按钮</string>
     <string name="accessibility_service_desc">SmartFloat 辅助点击服务，用于在悬浮按钮点击后模拟屏幕触摸事件</string>
+    <string name="title_activity_to">ToActivity</string>
 </resources>
