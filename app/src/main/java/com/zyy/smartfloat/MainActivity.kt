@@ -59,38 +59,49 @@ import androidx.localbroadcastmanager.content.LocalBroadcastManager
 
 class MainActivity : ComponentActivity() {
 
+    private val llmResult = mutableStateListOf<String>()
+    private val currentInstruction = mutableStateOf("")
+    private val instructionRecords = mutableStateListOf<InstructionRecord>()
+
     private val receiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
-            if (intent?.action == FloatingWindowService.ACTION_LLM_RESULT) {
-                val result = intent.getStringExtra(FloatingWindowService.EXTRA_LLM_RESULT) ?: ""
-                if (result.isNotEmpty()) {
-                    synchronized(this@MainActivity) {
-                        llmResult.value = result
-                        if (currentInstruction.value.isNotEmpty()) {
-                            instructionRecords.add(0, InstructionRecord(currentInstruction.value, result))
+            when (intent?.action) {
+                FloatingWindowService.ACTION_LLM_RESULT -> {
+                    val result = intent.getStringExtra(FloatingWindowService.EXTRA_LLM_RESULT) ?: ""
+                    if (result.isNotEmpty()) {
+                        synchronized(this@MainActivity) {
+                            llmResult.add(result)
+                            if (llmResult.size == 1 && currentInstruction.value.isNotEmpty()) {
+                                instructionRecords.add(0, InstructionRecord(currentInstruction.value, result))
+                            } else if (llmResult.size > 1 && instructionRecords.isNotEmpty()) {
+                                val updatedRecord = instructionRecords[0].copy(remark = llmResult.joinToString("\n"))
+                                instructionRecords[0] = updatedRecord
+                            }
                         }
                     }
+                }
+                FloatingWindowService.ACTION_TASK_START -> {
+                    llmResult.clear()
                 }
             }
         }
     }
-
-    private val llmResult = mutableStateOf("")
-    private val currentInstruction = mutableStateOf("")
-    private val instructionRecords = mutableStateListOf<InstructionRecord>()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         LocalBroadcastManager.getInstance(this).registerReceiver(
             receiver,
-            IntentFilter(FloatingWindowService.ACTION_LLM_RESULT)
+            IntentFilter().apply {
+                addAction(FloatingWindowService.ACTION_LLM_RESULT)
+                addAction(FloatingWindowService.ACTION_TASK_START)
+            }
         )
         setContent {
             Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
                 FloatingButtonScreen(
                     modifier = Modifier.padding(innerPadding),
-                    llmResult = llmResult.value,
+                    llmResult = llmResult.toList(),
                     instructionRecords = instructionRecords,
                     onStartFloating = { instruction ->
                         currentInstruction.value = instruction
@@ -110,7 +121,7 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun FloatingButtonScreen(
     modifier: Modifier = Modifier,
-    llmResult: String = "",
+    llmResult: List<String> = emptyList(),
     instructionRecords: List<InstructionRecord> = emptyList(),
     onStartFloating: (String) -> Unit = {}
 ) {
@@ -341,11 +352,28 @@ fun FloatingButtonScreen(
         if (llmResult.isNotEmpty()) {
             Spacer(modifier = Modifier.height(20.dp))
             Text(
-                text = "LLM回答: $llmResult",
+                text = "LLM回答 (共${llmResult.size}条):",
                 color = Color(0xFF4CAF50),
                 fontSize = 14.sp,
+                fontWeight = FontWeight.Bold,
                 modifier = Modifier.padding(horizontal = 16.dp)
             )
+            Spacer(modifier = Modifier.height(8.dp))
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height((llmResult.size.coerceAtMost(5) * 40).dp)
+                    .padding(horizontal = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                items(llmResult.size) { index ->
+                    Text(
+                        text = "${index + 1}. ${llmResult[index]}",
+                        color = Color(0xFF333333),
+                        fontSize = 13.sp
+                    )
+                }
+            }
         }
 
         Spacer(modifier = Modifier.height(20.dp))

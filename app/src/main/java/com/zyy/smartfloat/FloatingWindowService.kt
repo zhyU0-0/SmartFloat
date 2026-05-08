@@ -81,6 +81,9 @@ class FloatingWindowService : Service() {
     private var submitButton: ImageView? = null
     private var recognizedText: String = ""
     private var isProcessing = false
+    private var lastTapX: Double = -1.0
+    private var lastTapY: Double = -1.0
+    private var redButton: CardView? = null
     
     // 用于接收从 Intent 传递的问题
     private var llmQuestion: String = ""
@@ -90,6 +93,7 @@ class FloatingWindowService : Service() {
         const val NOTIFICATION_ID = 1001
         const val ACTION_STOP = "com.zyy.smartfloat.STOP_SERVICE"
         const val ACTION_LLM_RESULT = "com.zyy.smartfloat.LLM_RESULT"
+        const val ACTION_TASK_START = "com.zyy.smartfloat.TASK_START"
         const val EXTRA_LLM_RESULT = "extra_llm_result"
         const val EXTRA_LLM_QUESTION = "extra_llm_question"
         private const val TAG = "FloatingWindowService"
@@ -125,6 +129,7 @@ class FloatingWindowService : Service() {
             if (it.isNotEmpty()) {
                 llmQuestion = it
                 Log.d(TAG, "LLM question updated: $llmQuestion")
+                LocalBroadcastManager.getInstance(this).sendBroadcast(Intent(ACTION_TASK_START))
             }
         }
         
@@ -226,8 +231,8 @@ class FloatingWindowService : Service() {
                 }
             }
 
-            val redButton = floatView!!.findViewById<CardView>(R.id.floating_red_button)
-            redButton.setOnTouchListener { _, event ->
+            redButton = floatView!!.findViewById<CardView>(R.id.floating_red_button)
+            redButton?.setOnTouchListener { _, event ->
                 when (event.action) {
                     MotionEvent.ACTION_DOWN -> {
                         initialX = layoutParams.x
@@ -368,8 +373,17 @@ class FloatingWindowService : Service() {
                     return@launch
                 }
 
+                withContext(Dispatchers.Main) {
+                    redButton?.visibility = View.GONE
+                }
+                delay(100)
+
                 val bitmap = a11yService.captureScreenshot()
                 Log.d(TAG, "screenshot captured: ${bitmap.width}x${bitmap.height}")
+
+                withContext(Dispatchers.Main) {
+                    redButton?.visibility = View.VISIBLE
+                }
 
                 val file = saveBitmapToFile(bitmap)
                 Log.d(TAG, "screenshot saved to: ${file.absolutePath}")
@@ -455,6 +469,8 @@ class FloatingWindowService : Service() {
 
                     llmResponse?.tapPoints?.forEach { tapPoint ->
                         Log.d(TAG, "执行点击: x=${tapPoint.tapX}, y=${tapPoint.tapY}, delay=${tapPoint.delay}")
+                        lastTapX = tapPoint.tapX
+                        lastTapY = tapPoint.tapY
                         TapAccessibilityService.instance?.simulateTap(
                             tapPoint.tapX.toFloat(),
                             tapPoint.tapY.toFloat(),
@@ -466,9 +482,8 @@ class FloatingWindowService : Service() {
                     withContext(Dispatchers.Main) {
                         Toast.makeText(this@FloatingWindowService, "LLM: ${llmResponse?.remark ?: answer}", Toast.LENGTH_SHORT).show()
                     }
-
+                    sendLlmResultToActivity(llmResponse.remark ?: answer)
                     if (llmResponse?.isEnd == true) {
-                        sendLlmResultToActivity(llmResponse.remark ?: answer)
                         Log.d(TAG, "任务完成")
                         isProcessing = false
                         break
@@ -480,7 +495,17 @@ class FloatingWindowService : Service() {
 
                     if (loopCount < maxLoops) {
                         delay(1500)
+                        withContext(Dispatchers.Main) {
+                            redButton?.visibility = View.GONE
+                        }
+                        delay(100)
+
                         val bitmap = TapAccessibilityService.instance?.captureScreenshot()
+                        
+                        withContext(Dispatchers.Main) {
+                            redButton?.visibility = View.VISIBLE
+                        }
+
                         if (bitmap != null) {
                             val file = saveBitmapToFile(bitmap)
                             currentImageUrl = uploadScreenshot(file)
@@ -532,7 +557,7 @@ class FloatingWindowService : Service() {
         return android.graphics.BitmapFactory.decodeStream(bais)!!
     }
 
-    private fun addGridAndCoordinates(bitmap: Bitmap, origWidth: Int, origHeight: Int): Bitmap {
+    private fun addGridAndCoordinates(bitmap: Bitmap, origWidth: Int, origHeight: Int, lastTapX: Double = -1.0, lastTapY: Double = -1.0): Bitmap {
         val width = bitmap.width
         val height = bitmap.height
         val scaleX = width.toFloat() / origWidth
@@ -543,12 +568,15 @@ class FloatingWindowService : Service() {
         val paint = Paint().apply {
             color = Color.parseColor("#88FF0000")
             strokeWidth = 1f
-            textSize = 30f
             isAntiAlias = true
         }
 
-        val gridSize = 50
-        val labelStep = 100
+        val isLandscape = width > height
+        val textScale = if (isLandscape) 0.6f else 1.0f
+        val stepScale = if (isLandscape) 2 else 1
+
+        val gridSize = 100
+        val labelStep = 200
 
         for (x in 0..origWidth step gridSize) {
             val px = x * scaleX
@@ -561,24 +589,35 @@ class FloatingWindowService : Service() {
         }
 
         paint.color = Color.RED
-        paint.textSize = 24f
+        paint.textSize = 24f * textScale
+        val labelTextSize = paint.textSize
 
         for (x in 0..origWidth step labelStep) {
             val px = x * scaleX
-            canvas.drawText("$x", px, 30f, paint)
+            canvas.drawText("$x", px-20, labelTextSize + 4, paint)
         }
 
         for (y in labelStep..origHeight step labelStep) {
             val py = y * scaleY
-            canvas.drawText("$y", 5f, py, paint)
+            canvas.drawText("$y", 5f, py - 4, paint)
         }
 
-        paint.textSize = 32f
+        paint.textSize = 24f * textScale
         paint.color = Color.GREEN
-        canvas.drawText("(0,0)", 5f, 60f, paint)
-        canvas.drawText("($origWidth, 0)", (width - 120).toFloat(), 60f, paint)
-        canvas.drawText("(0, $origHeight)", 5f, (height - 10).toFloat(), paint)
-        canvas.drawText("($origWidth, $origHeight)", (width - 160).toFloat(), (height - 10).toFloat(), paint)
+        val cornerTextSize = paint.textSize
+        val cornerOffset = cornerTextSize + 8
+
+        canvas.drawText("(0,0)", 5f, cornerOffset, paint)
+        canvas.drawText("(0, $origHeight)", 5f, (height - 4).toFloat(), paint)
+        canvas.drawText("($origWidth, $origHeight)", (width - cornerTextSize * 6).toFloat(), (height - 4).toFloat(), paint)
+
+        if (lastTapX >= 0 && lastTapY >= 0) {
+            val tapPx = lastTapX.toFloat() * scaleX
+            val tapPy = lastTapY.toFloat() * scaleY
+            paint.color = Color.parseColor("#88FF0000")
+            paint.style = Paint.Style.FILL
+            canvas.drawCircle(tapPx, tapPy, 15f, paint)
+        }
 
         return mutableBitmap
     }
@@ -589,7 +628,7 @@ class FloatingWindowService : Service() {
         val scaledBitmap = scaleDown(bitmap)
         val compressedBitmap = compressToLowQuality(scaledBitmap)
         if (scaledBitmap !== bitmap) scaledBitmap.recycle()
-        val bitmapWithGrid = addGridAndCoordinates(compressedBitmap, origWidth, origHeight)
+        val bitmapWithGrid = addGridAndCoordinates(compressedBitmap, origWidth, origHeight, lastTapX, lastTapY)
         compressedBitmap.recycle()
         val dir = cacheDir
         val file = File(dir, "smartFloat.png")

@@ -1,9 +1,14 @@
 package com.zyy.smartfloat.network
 
+import okhttp3.Interceptor
 import okhttp3.OkHttpClient
+import okhttp3.Request
+import okhttp3.Response
 import okhttp3.logging.HttpLoggingInterceptor
 import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
+import java.io.IOException
+import java.nio.charset.Charset
 import java.util.concurrent.TimeUnit
 
 object RetrofitClient {
@@ -14,16 +19,52 @@ object RetrofitClient {
     val uploadApi: UploadApi by lazy { uploadRetrofit.create(UploadApi::class.java) }
     val llmApi: LlmApi by lazy { llmRetrofit.create(LlmApi::class.java) }
 
+    private const val MAX_LOG_LENGTH = 3000
+    private const val MAX_BINARY_DETECTION = 100
+
     private val okHttpClient: OkHttpClient by lazy {
-        val logging = HttpLoggingInterceptor().apply {
+        val logging = HttpLoggingInterceptor(object : HttpLoggingInterceptor.Logger {
+            override fun log(message: String) {
+                if (message.isEmpty()) {
+                    return
+                }
+                
+                if (isBinaryContent(message)) {
+                    println("OkHttp: [Binary data skipped]")
+                    return
+                }
+                
+                val trimmedMessage = if (message.length > MAX_LOG_LENGTH) {
+                    message.substring(0, MAX_LOG_LENGTH) + " [TRUNCATED, total: ${message.length}]"
+                } else {
+                    message
+                }
+                println("OkHttp: $trimmedMessage")
+            }
+        }).apply {
             level = HttpLoggingInterceptor.Level.BODY
         }
+
         OkHttpClient.Builder()
             .addInterceptor(logging)
-            .connectTimeout(60, TimeUnit.SECONDS)
-            .readTimeout(60, TimeUnit.SECONDS)
-            .writeTimeout(120, TimeUnit.SECONDS)
+            .connectTimeout(120, TimeUnit.SECONDS)
+            .readTimeout(120, TimeUnit.SECONDS)
+            .writeTimeout(180, TimeUnit.SECONDS)
             .build()
+    }
+
+    private fun isBinaryContent(message: String): Boolean {
+        var nonPrintableCount = 0
+        val checkLength = minOf(message.length, MAX_BINARY_DETECTION)
+        
+        for (i in 0 until checkLength) {
+            val char = message[i]
+            if (char.toInt() < 32 && char != '\n' && char != '\r' && char != '\t') {
+                nonPrintableCount++
+            }
+        }
+        
+        return nonPrintableCount > checkLength / 3
     }
 
     private val uploadRetrofit: Retrofit by lazy {
