@@ -3,6 +3,7 @@ package com.zyy.smartfloat
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -25,13 +26,11 @@ import kotlinx.coroutines.launch
 class ModelManagerActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        enableEdgeToEdge()
         setContent {
             SmartFloatTheme {
-                Surface(
-                    modifier = Modifier.fillMaxSize(),
-                    color = MaterialTheme.colorScheme.background
-                ) {
-                    ModelManagerScreen()
+                Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
+                    ModelManagerScreen(modifier = Modifier.padding(innerPadding))
                 }
             }
         }
@@ -40,6 +39,7 @@ class ModelManagerActivity : ComponentActivity() {
 
 @Composable
 fun ModelManagerScreen(
+    modifier: Modifier = Modifier,
     viewModel: ModelManagerViewModel = viewModel()
 ) {
     val scope = rememberCoroutineScope()
@@ -54,7 +54,7 @@ fun ModelManagerScreen(
     var newBaseUrl by remember { mutableStateOf("") }
 
     Column(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxSize()
             .padding(16.dp)
     ) {

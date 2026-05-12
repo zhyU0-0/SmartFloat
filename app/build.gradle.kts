@@ -60,6 +60,7 @@ dependencies {
     implementation(libs.gson)
     implementation(libs.coroutines.android)
     testImplementation(libs.junit)
+    implementation("com.google.mlkit:text-recognition:16.0.0")
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
     androidTestImplementation(platform(libs.androidx.compose.bom))

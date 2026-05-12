@@ -13,7 +13,7 @@ import java.util.concurrent.TimeUnit
 
 object RetrofitClient {
 
-    private const val UPLOAD_BASE_URL = "http://10.13.109.31:9080/"
+    private const val UPLOAD_BASE_URL = "http://47.112.208.118:5080/"
     private const val LLM_BASE_URL = "https://ark.cn-beijing.volces.com/"
 
     val uploadApi: UploadApi by lazy { uploadRetrofit.create(UploadApi::class.java) }

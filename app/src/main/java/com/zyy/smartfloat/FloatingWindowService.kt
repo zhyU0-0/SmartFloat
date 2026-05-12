@@ -32,6 +32,10 @@ import androidx.core.app.ActivityCompat
 import androidx.core.app.NotificationCompat
 import androidx.localbroadcastmanager.content.LocalBroadcastManager
 import com.google.gson.Gson
+/*import com.google.mlkit.vision.common.InputImage
+import com.google.mlkit.vision.text.Text
+import com.google.mlkit.vision.text.TextRecognition
+import com.google.mlkit.vision.text.TextRecognizer*/
 import com.zyy.smartfloat.network.ImageUrl
 import com.zyy.smartfloat.network.LlmContent
 import com.zyy.smartfloat.network.LlmMessage
@@ -78,12 +82,12 @@ class FloatingWindowService : Service() {
     private val LONG_PRESS_THRESHOLD = 500L // 长按阈值500ms
     private val mainHandler = Handler(Looper.getMainLooper())
     private var floatingText: TextView? = null
+    private var floatingIcon: ImageView? = null
     private var cleanButton: ImageView? = null
     private var submitButton: ImageView? = null
     private var recognizedText: String = ""
     private var isProcessing = false
-    private var isCancelRequested = false
-    // 记录上一轮AI返回的所有点击坐标
+    private val currentTaskId = java.util.concurrent.atomic.AtomicLong(0)
     private var lastTapPoints = mutableListOf<TapPoints>()
     private var redButton: CardView? = null
 
@@ -133,7 +137,7 @@ class FloatingWindowService : Service() {
             stopService()
             return START_NOT_STICKY
         }
-        
+
         intent?.getStringExtra(EXTRA_LLM_QUESTION)?.let {
             if (it.isNotEmpty()) {
                 llmQuestion = it
@@ -141,7 +145,7 @@ class FloatingWindowService : Service() {
                 LocalBroadcastManager.getInstance(this).sendBroadcast(Intent(ACTION_TASK_START))
             }
         }
-        
+
         try {
             startForeground(NOTIFICATION_ID, createNotification())
         } catch (e: SecurityException) {
@@ -222,6 +226,7 @@ class FloatingWindowService : Service() {
             floatView = inflater.inflate(R.layout.floating_button, null)
 
             floatingText = floatView!!.findViewById(R.id.floating_text)
+            floatingIcon = floatView!!.findViewById(R.id.floating_icon)
             cleanButton = floatView!!.findViewById(R.id.clean_floating_text_button)
             submitButton = floatView!!.findViewById(R.id.submit_floating_text_button)
             updateFloatingText()
@@ -264,7 +269,7 @@ class FloatingWindowService : Service() {
                     }
                     MotionEvent.ACTION_UP -> {
                         mainHandler.removeCallbacks(longPressRunnable)
-                        
+
                         val deltaX = Math.abs(event.rawX - initialTouchX)
                         val deltaY = Math.abs(event.rawY - initialTouchY)
 
@@ -296,7 +301,7 @@ class FloatingWindowService : Service() {
     }
 
     private fun startRecording() {
-        if (ActivityCompat.checkSelfPermission(this, android.Manifest.permission.RECORD_AUDIO) 
+        if (ActivityCompat.checkSelfPermission(this, android.Manifest.permission.RECORD_AUDIO)
             != PackageManager.PERMISSION_GRANTED) {
             Log.e(TAG, "录音权限未授予")
             return
@@ -319,7 +324,7 @@ class FloatingWindowService : Service() {
                 isRecording = false
                 mainHandler.post {
                     resetButtonColor()
-                    floatingText?.text = "🎤"
+                    updateFloatingText()
                 }
             },
             onStart = {
@@ -334,7 +339,7 @@ class FloatingWindowService : Service() {
                 }
             }
         )
-        
+
         voiceRecognizer?.startRecording()
     }
 
@@ -352,10 +357,18 @@ class FloatingWindowService : Service() {
     private fun updateFloatingText() {
         if (recognizedText.isNotEmpty()) {
             floatingText?.text = recognizedText
+            floatingText?.visibility = View.VISIBLE
+            floatingIcon?.visibility = View.GONE
             cleanButton?.visibility = View.VISIBLE
             submitButton?.visibility = View.VISIBLE
         } else {
-            floatingText?.text = "🎤"
+            floatingText?.visibility = View.GONE
+            floatingIcon?.visibility = View.VISIBLE
+            if (isProcessing) {
+                floatingIcon?.setImageResource(R.drawable.ic_stop)
+            } else {
+                floatingIcon?.setImageResource(R.drawable.ic_microphone)
+            }
             cleanButton?.visibility = View.GONE
             submitButton?.visibility = View.GONE
         }
@@ -369,10 +382,18 @@ class FloatingWindowService : Service() {
 
     private fun captureAndUpload() {
         isProcessing = true
-        // 清空上一轮的点击坐标，开始新的一轮
+        val taskId = currentTaskId.incrementAndGet()
+        Log.d(TAG, "Starting task #$taskId")
+        mainHandler.post {
+            updateFloatingText()
+        }
         lastTapPoints.clear()
         serviceScope.launch {
             try {
+                if (currentTaskId.get() != taskId) {
+                    Log.d(TAG, "Task #$taskId cancelled before start")
+                    return@launch
+                }
                 val a11yService = TapAccessibilityService.instance
                 if (a11yService == null) {
                     Log.e(TAG, "TapAccessibilityService instance is null")
@@ -398,6 +419,11 @@ class FloatingWindowService : Service() {
                 val bitmap = a11yService.captureScreenshot()
                 Log.d(TAG, "screenshot captured: ${bitmap.width}x${bitmap.height}")
 
+                /*val recognizedTextResult = recognizeTextFromBitmap(bitmap)
+                Log.d(TAG, "text recognition result: $recognizedTextResult")
+
+                sendImageRecognitionResult(recognizedTextResult)*/
+
                 withContext(Dispatchers.Main) {
                     redButton?.visibility = View.VISIBLE
                 }
@@ -412,9 +438,8 @@ class FloatingWindowService : Service() {
                     Toast.makeText(this@FloatingWindowService, "上传成功: $imageUrl", Toast.LENGTH_LONG).show()
                 }
 
-                sendToLlm(imageUrl, recognizedText)
-                
-                // 上传完成后清空识别文本，以便下次重新录音
+                sendToLlm(taskId, imageUrl, recognizedText)
+
                 mainHandler.post {
                     recognizedText = ""
                     updateFloatingText()
@@ -430,27 +455,28 @@ class FloatingWindowService : Service() {
     }
 
     private fun cancelProcessing() {
-        isCancelRequested = true
+        currentTaskId.incrementAndGet()
         isProcessing = false
+        mainHandler.post {
+            updateFloatingText()
+        }
         Toast.makeText(this@FloatingWindowService, "任务已取消", Toast.LENGTH_SHORT).show()
-        Log.d(TAG, "Processing cancelled by user")
+        Log.d(TAG, "Processing cancelled, new taskId=$currentTaskId")
     }
 
     @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
-    private fun sendToLlm(imageUrl: String, question: String) {
+    private fun sendToLlm(taskId: Long, imageUrl: String, question: String) {
         serviceScope.launch {
             val history = mutableListOf<ProcessHistory>()
             var currentImageUrl = imageUrl
             var loopCount = 0
 
-
-            while (loopCount < maxLoops && !isCancelRequested) {
+            while (loopCount < maxLoops) {
                 loopCount++
-                Log.d(TAG, "=== LLM循环第${loopCount}轮 ===")
-                
-                // 检查是否被取消
-                if (isCancelRequested) {
-                    Log.d(TAG, "Processing cancelled, exiting loop")
+                Log.d(TAG, "=== LLM循环第${loopCount}轮 taskId=$taskId ===")
+
+                if (currentTaskId.get() != taskId) {
+                    Log.d(TAG, "Task #$taskId cancelled, exiting loop")
                     break
                 }
 
@@ -521,55 +547,61 @@ class FloatingWindowService : Service() {
                             Log.e(TAG, "记录对话失败: ${e.message}", e)
                         }
                     }
-
-                    llmResponse?.tapPoints?.forEach { tapPoint ->
-                        Log.d(TAG, "执行点击: x=${tapPoint.tapX}, y=${tapPoint.tapY}, delay=${tapPoint.delay}")
-                        // 将点击坐标添加到列表中
-                        lastTapPoints.add(tapPoint)
-                        TapAccessibilityService.instance?.simulateTap(
-                            tapPoint.tapX.toFloat(),
-                            tapPoint.tapY.toFloat(),
-                            tapPoint.delay.toLong(),
-                            1
-                        )
-                    }
-
-                    withContext(Dispatchers.Main) {
-                        Toast.makeText(this@FloatingWindowService, "LLM: ${llmResponse?.remark ?: answer}", Toast.LENGTH_SHORT).show()
-                    }
-                    sendLlmResultToActivity(llmResponse.remark ?: answer)
-                    if (llmResponse?.isEnd == true) {
-                        Log.d(TAG, "任务完成")
-                        isProcessing = false
-                        break
-                    }
-
-                    llmResponse?.remark?.let {
-                        history.add(ProcessHistory(it,llmResponse.tapPoints))
-                    }
-
-                    if (loopCount < maxLoops) {
-                        delay(1500)
-                        withContext(Dispatchers.Main) {
-                            redButton?.visibility = View.GONE
+                    if (currentTaskId.get() == taskId) {
+                        llmResponse?.tapPoints?.forEach { tapPoint ->
+                            Log.d(TAG, "执行点击: x=${tapPoint.tapX}, y=${tapPoint.tapY}, delay=${tapPoint.delay}")
+                            // 将点击坐标添加到列表中
+                            lastTapPoints.add(tapPoint)
+                            TapAccessibilityService.instance?.simulateTap(
+                                tapPoint.tapX.toFloat(),
+                                tapPoint.tapY.toFloat(),
+                                tapPoint.delay.toLong(),
+                                1
+                            )
                         }
-                        delay(100)
-
-                        val bitmap = TapAccessibilityService.instance?.captureScreenshot()
-                        
                         withContext(Dispatchers.Main) {
-                            redButton?.visibility = View.VISIBLE
+                            Toast.makeText(this@FloatingWindowService, "LLM: ${llmResponse?.remark ?: answer}", Toast.LENGTH_SHORT).show()
                         }
-
-                        if (bitmap != null) {
-                            val file = saveBitmapToFile(bitmap)
-                            currentImageUrl = uploadScreenshot(file)
-                            Log.d(TAG, "重新截图上传: $currentImageUrl")
-                        } else {
-                            Log.e(TAG, "重新截图失败")
+                        sendLlmResultToActivity(llmResponse.remark ?: answer)
+                        if (llmResponse?.isEnd == true) {
+                            Log.d(TAG, "任务完成")
+                            isProcessing = false
+                            mainHandler.post {
+                                updateFloatingText()
+                            }
                             break
                         }
+
+                        llmResponse?.remark?.let {
+                            history.add(ProcessHistory(it,llmResponse.tapPoints))
+                        }
+
+                        if (loopCount < maxLoops) {
+                            delay(1500)
+                            withContext(Dispatchers.Main) {
+                                redButton?.visibility = View.GONE
+                            }
+                            delay(100)
+
+                            val bitmap = TapAccessibilityService.instance?.captureScreenshot()
+
+                            withContext(Dispatchers.Main) {
+                                redButton?.visibility = View.VISIBLE
+                            }
+
+                            if (bitmap != null) {
+                                val file = saveBitmapToFile(bitmap)
+                                currentImageUrl = uploadScreenshot(file)
+                                Log.d(TAG, "重新截图上传: $currentImageUrl")
+                            } else {
+                                Log.e(TAG, "重新截图失败")
+                                break
+                            }
+                        }
                     }
+                } catch (e: kotlinx.coroutines.CancellationException) {
+                    Log.d(TAG, "sendToLlm task #$taskId cancelled")
+                    break
                 } catch (e: Exception) {
                     Log.e(TAG, "sendToLlm第${loopCount}轮失败: ${e.message}", e)
                     withContext(Dispatchers.Main) {
@@ -579,13 +611,17 @@ class FloatingWindowService : Service() {
                 }
             }
 
-            if (loopCount >= maxLoops && !isCancelRequested) {
+            if (loopCount >= maxLoops && currentTaskId.get() == taskId) {
                 Log.w(TAG, "达到最大循环次数$maxLoops，强制结束")
                 sendLlmResultToActivity("任务执行达到最大循环次数")
             }
-            
-            isProcessing = false
-            isCancelRequested = false
+
+            if (currentTaskId.get() == taskId) {
+                isProcessing = false
+                mainHandler.post {
+                    updateFloatingText()
+                }
+            }
         }
     }
 
@@ -600,6 +636,51 @@ class FloatingWindowService : Service() {
         intent.putExtra(EXTRA_VOICE_TEXT, text)
         LocalBroadcastManager.getInstance(this).sendBroadcast(intent)
     }
+
+    private fun sendImageRecognitionResult(text: String) {
+        val intent = Intent(ACTION_IMAGE_RECOGNITION)
+        intent.putExtra(EXTRA_IMAGE_TEXT, text)
+        LocalBroadcastManager.getInstance(this).sendBroadcast(intent)
+    }
+
+    /*private suspend fun recognizeTextFromBitmap(bitmap: Bitmap): String {
+        return withContext(Dispatchers.IO) {
+            try {
+                val image = InputImage.fromBitmap(bitmap, 0)
+                val recognizer = TextRecognition.getClient()
+                
+                val result = kotlin.runCatching {
+                    recognizer.process(image).get()
+                }.getOrNull()
+
+                if (result != null) {
+                    val sb = StringBuilder()
+                    sb.append("识别到的文本：\n")
+                    
+                    for (block in result.textBlocks) {
+                        for (line in block.lines) {
+                            for (element in line.elements) {
+                                sb.append("文本: ${element.text}\n")
+                                sb.append("坐标: (${element.boundingBox?.left}, ${element.boundingBox?.top}) - (${element.boundingBox?.right}, ${element.boundingBox?.bottom})\n")
+                            }
+                            sb.append("\n")
+                        }
+                    }
+                    
+                    if (result.textBlocks.isEmpty()) {
+                        sb.append("未识别到文本")
+                    }
+                    
+                    sb.toString()
+                } else {
+                    "文本识别失败"
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Text recognition failed: ${e.message}", e)
+                "文本识别异常: ${e.message}"
+            }
+        }
+    }*/
 
 
     private fun scaleDown(bitmap: Bitmap, maxWidth: Int = 540, maxHeight: Int = 1200): Bitmap {

@@ -4,6 +4,7 @@ import android.os.Bundle
 import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -32,13 +33,11 @@ import java.util.*
 class StatisticsActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        enableEdgeToEdge()
         setContent {
             SmartFloatTheme {
-                Surface(
-                    modifier = Modifier.fillMaxSize(),
-                    color = MaterialTheme.colorScheme.background
-                ) {
-                    StatisticsScreen()
+                Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
+                    StatisticsScreen(modifier = Modifier.padding(innerPadding))
                 }
             }
         }
@@ -47,6 +46,7 @@ class StatisticsActivity : ComponentActivity() {
 
 @Composable
 fun StatisticsScreen(
+    modifier: Modifier = Modifier,
     viewModel: StatisticsViewModel = viewModel()
 ) {
     LaunchedEffect(Unit) {
@@ -54,7 +54,7 @@ fun StatisticsScreen(
     }
 
     Column(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxSize()
             .padding(16.dp)
     ) {

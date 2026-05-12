@@ -95,6 +95,12 @@ class MainActivity : ComponentActivity() {
                         currentInstruction.value = text
                     }
                 }
+                FloatingWindowService.ACTION_IMAGE_RECOGNITION -> {
+                    val text = intent.getStringExtra(FloatingWindowService.EXTRA_IMAGE_TEXT) ?: ""
+                    if (text.isNotEmpty()) {
+                        imageRecognitionResult.value = text
+                    }
+                }
             }
         }
     }
@@ -293,6 +299,33 @@ fun FloatingButtonScreen(
                 fontSize = 16.sp,
                 modifier = Modifier.padding(horizontal = 24.dp, vertical = 12.dp)
             )
+        }
+
+        if (imageRecognitionResult.isNotEmpty()) {
+            Spacer(modifier = Modifier.height(20.dp))
+            Text(
+                text = "图片文本识别结果:",
+                color = Color(0xFF2196F3),
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.padding(horizontal = 16.dp)
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            Card(
+                colors = CardDefaults.cardColors(
+                    containerColor = Color(0xFFE3F2FD)
+                ),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp)
+            ) {
+                Text(
+                    text = imageRecognitionResult,
+                    color = Color(0xFF1976D2),
+                    fontSize = 13.sp,
+                    modifier = Modifier.padding(12.dp)
+                )
+            }
         }
 
         if (llmResult.isNotEmpty()) {
