@@ -31,6 +31,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
@@ -40,6 +41,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
@@ -170,10 +172,21 @@ fun FloatingButtonScreen(
         contract = ActivityResultContracts.RequestPermission()
     ) { granted ->
         if (granted) {
-            voiceRecognizer?.startRecording()
-            isRecording = true
+            // 麦克风权限已授予
         }
     }
+
+    LaunchedEffect(Unit) {
+        if (ContextCompat.checkSelfPermission(
+                context,
+                Manifest.permission.RECORD_AUDIO
+            ) != PackageManager.PERMISSION_GRANTED
+        ) {
+            audioPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+        }
+    }
+
+
 
     val notificationPermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission()
@@ -249,64 +262,6 @@ fun FloatingButtonScreen(
                 .padding(horizontal = 32.dp),
             maxLines = 3
         )
-
-        Spacer(modifier = Modifier.height(12.dp))
-
-        Row(
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            var longPressTriggered by remember { mutableStateOf(false) }
-
-            /*Box(
-                modifier = Modifier
-                    .pointerInput(Unit) {
-                        detectTapGestures(
-                            onLongPress = {
-                                longPressTriggered = true
-                                if (ContextCompat.checkSelfPermission(
-                                        context,
-                                        Manifest.permission.RECORD_AUDIO
-                                    ) == PackageManager.PERMISSION_GRANTED
-                                ) {
-                                    voiceRecognizer?.setCallbacks(
-                                        onResult = { text ->
-                                            localQuestion = text
-                                            isRecording = false
-                                        },
-                                        onError = { }
-                                    )
-                                    voiceRecognizer?.startRecording()
-                                    isRecording = true
-                                } else {
-                                    audioPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
-                                }
-                            },
-                            onPress = {
-                                val released = tryAwaitRelease()
-                                if (released && longPressTriggered && isRecording) {
-                                    voiceRecognizer?.stopRecordingAndRecognize()
-                                    isRecording = false
-                                }
-                                longPressTriggered = false
-                            }
-                        )
-                    }
-            ) {
-                Card(
-                    colors = CardDefaults.cardColors(
-                        containerColor = if (isRecording) Color(0xFFE53935) else Color(0xFF03A9F4)
-                    )
-                ) {
-                    Text(
-                        text = if (isRecording) "录音中..." else "长按录音",
-                        color = Color.White,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 18.sp,
-                        modifier = Modifier.padding(horizontal = 24.dp, vertical = 12.dp)
-                    )
-                }
-            }*/
-        }
 
         Spacer(modifier = Modifier.height(20.dp))
 
@@ -409,6 +364,32 @@ fun FloatingButtonScreen(
                         }
                     }
                 }
+            }
+        }
+        
+        Spacer(modifier = Modifier.height(16.dp))
+        
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 32.dp),
+            horizontalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            Button(
+                onClick = {
+                    val intent = Intent(context, StatisticsActivity::class.java)
+                    context.startActivity(intent)
+                },
+                modifier = Modifier.weight(1f)
+            ) {
+                Text("查看统计")
+            }
+            Button(
+                onClick = {
+                    val intent = Intent(context, ModelManagerActivity::class.java)
+                    context.startActivity(intent)
+                },
+                modifier = Modifier.weight(1f)
+            ) {
+                Text("模型管理")
             }
         }
     }

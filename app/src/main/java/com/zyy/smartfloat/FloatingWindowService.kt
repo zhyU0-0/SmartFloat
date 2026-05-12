@@ -82,10 +82,14 @@ class FloatingWindowService : Service() {
     private var submitButton: ImageView? = null
     private var recognizedText: String = ""
     private var isProcessing = false
+    private var isCancelRequested = false
     // 记录上一轮AI返回的所有点击坐标
     private var lastTapPoints = mutableListOf<TapPoints>()
     private var redButton: CardView? = null
-    
+
+    private val prefs by lazy { getSharedPreferences("smart_float_prefs", MODE_PRIVATE) }
+    private var cachedImagePath: String? = null
+
     // 用于接收从 Intent 传递的问题
     private var llmQuestion: String = ""
 
@@ -245,8 +249,10 @@ class FloatingWindowService : Service() {
                         initialTouchX = event.rawX
                         initialTouchY = event.rawY
                         longPressTriggered = false
-                        // 启动长按检测
-                        mainHandler.postDelayed(longPressRunnable, LONG_PRESS_THRESHOLD)
+                        // 如果正在处理中，不启动长按检测，准备处理点击取消
+                        if (!isProcessing) {
+                            mainHandler.postDelayed(longPressRunnable, LONG_PRESS_THRESHOLD)
+                        }
                         true
                     }
                     MotionEvent.ACTION_MOVE -> {
@@ -262,7 +268,10 @@ class FloatingWindowService : Service() {
                         val deltaX = Math.abs(event.rawX - initialTouchX)
                         val deltaY = Math.abs(event.rawY - initialTouchY)
 
-                        if (longPressTriggered && isRecording) {
+                        if (isProcessing) {
+                            // 如果正在处理中，点击按钮取消任务
+                            cancelProcessing()
+                        } else if (longPressTriggered && isRecording) {
                             // 停止录音并识别
                             stopRecordingAndRecognize()
                         }
@@ -298,7 +307,6 @@ class FloatingWindowService : Service() {
             onResult = { text ->
                 Log.d(TAG, "语音识别结果: $text")
                 recognizedText = text
-                recognizedText = "帮我完成测试"
                 isRecording = false
                 sendVoiceRecognitionResult(text)
                 mainHandler.post {
@@ -355,7 +363,7 @@ class FloatingWindowService : Service() {
 
     private fun resetButtonColor() {
         floatView?.findViewById<CardView>(R.id.floating_red_button)?.setCardBackgroundColor(
-            Color.parseColor("#03A9F4")
+            Color.parseColor("#66000000")
         )
     }
 
@@ -421,6 +429,13 @@ class FloatingWindowService : Service() {
         }
     }
 
+    private fun cancelProcessing() {
+        isCancelRequested = true
+        isProcessing = false
+        Toast.makeText(this@FloatingWindowService, "任务已取消", Toast.LENGTH_SHORT).show()
+        Log.d(TAG, "Processing cancelled by user")
+    }
+
     @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
     private fun sendToLlm(imageUrl: String, question: String) {
         serviceScope.launch {
@@ -429,9 +444,15 @@ class FloatingWindowService : Service() {
             var loopCount = 0
 
 
-            while (loopCount < maxLoops) {
+            while (loopCount < maxLoops && !isCancelRequested) {
                 loopCount++
                 Log.d(TAG, "=== LLM循环第${loopCount}轮 ===")
+                
+                // 检查是否被取消
+                if (isCancelRequested) {
+                    Log.d(TAG, "Processing cancelled, exiting loop")
+                    break
+                }
 
                 val lLmResponseExample = LLmResponse(
                     listOf(TapPoints(1.0, 10.0, 100)),
@@ -445,8 +466,13 @@ class FloatingWindowService : Service() {
                 val llmBody = LLmBody(llmPrompt, question, screenWidth, screenHeight, history)
 
                 try {
-                    val apiKey = getString(R.string.llm_api_key)
-                    val model = getString(R.string.llm_model)
+                    val startTime = System.currentTimeMillis()
+                    
+                    // 从数据库获取活跃模型配置
+                    val activeModel = MyApp.repository.getActiveModelSync()
+                    val apiKey = activeModel?.apiKey ?: getString(R.string.llm_api_key)
+                    val model = activeModel?.modelName ?: getString(R.string.llm_model)
+                    val modelId = activeModel?.id ?: 0L
 
                     val request = LlmRequest(
                         model = model,
@@ -475,6 +501,26 @@ class FloatingWindowService : Service() {
                     val answer = response.choices.firstOrNull()?.message?.content ?: "返回：null"
                     Log.d(TAG, "LLM response: $answer")
                     val llmResponse = gson.fromJson(answer, LLmResponse::class.java)
+
+                    val inputToken = response.usage?.prompt_tokens ?: 0
+                    val outputToken = response.usage?.completion_tokens ?: 0
+                    val answerTime = System.currentTimeMillis() - startTime
+
+                    // 记录对话到数据库
+                    serviceScope.launch {
+                        try {
+                            MyApp.repository.insertConversation(
+                                remark = llmResponse?.remark ?: answer,
+                                inputToken = inputToken,
+                                outputToken = outputToken,
+                                answerTime = answerTime,
+                                modelId = modelId,
+                                modelName = model
+                            )
+                        } catch (e: Exception) {
+                            Log.e(TAG, "记录对话失败: ${e.message}", e)
+                        }
+                    }
 
                     llmResponse?.tapPoints?.forEach { tapPoint ->
                         Log.d(TAG, "执行点击: x=${tapPoint.tapX}, y=${tapPoint.tapY}, delay=${tapPoint.delay}")
@@ -533,12 +579,13 @@ class FloatingWindowService : Service() {
                 }
             }
 
-            if (loopCount >= maxLoops) {
+            if (loopCount >= maxLoops && !isCancelRequested) {
                 Log.w(TAG, "达到最大循环次数$maxLoops，强制结束")
                 sendLlmResultToActivity("任务执行达到最大循环次数")
             }
             
             isProcessing = false
+            isCancelRequested = false
         }
     }
 
@@ -647,23 +694,47 @@ class FloatingWindowService : Service() {
         return mutableBitmap
     }
 
-    private fun saveBitmapToFile(bitmap: Bitmap): File {
+    private suspend fun saveBitmapToFile(bitmap: Bitmap): File {
         val origWidth = bitmap.width
         val origHeight = bitmap.height
         val scaledBitmap = scaleDown(bitmap)
         val compressedBitmap = compressToLowQuality(scaledBitmap)
         if (scaledBitmap !== bitmap) scaledBitmap.recycle()
-        // 绘制上一轮AI返回的所有点击坐标
         val bitmapWithGrid = addGridAndCoordinates(compressedBitmap, origWidth, origHeight, lastTapPoints)
         compressedBitmap.recycle()
         val dir = cacheDir
-        val file = File(dir, "smartFloat.png")
+        val fileName = getImagePath()
+        val file = File(dir, fileName)
         FileOutputStream(file).use { fos ->
             bitmapWithGrid.compress(Bitmap.CompressFormat.PNG, 100, fos)
         }
         bitmapWithGrid.recycle()
         bitmap.recycle()
         return file
+    }
+
+    private suspend fun getImagePath(): String {
+        cachedImagePath?.let { return it }
+        val saved = prefs.getString("image_path", null)
+        if (saved != null) {
+            cachedImagePath = saved
+            return saved
+        }
+        return try {
+            val response = RetrofitClient.uploadApi.getPath()
+            if (response.code == 1 && response.data != null) {
+                prefs.edit().putString("image_path", response.data).apply()
+                cachedImagePath = response.data
+                Log.d(TAG, "getImagePath from API: ${response.data}")
+                response.data+".png"
+            } else {
+                Log.d(TAG, "getImagePath from API: ${response.data}")
+                "smartFloat.png"
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "getImagePath failed: ${e.message}", e)
+            "smartFloat.png"
+        }
     }
 
     private suspend fun uploadScreenshot(file: File): String {

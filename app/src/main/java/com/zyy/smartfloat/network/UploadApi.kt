@@ -11,4 +11,7 @@ interface UploadApi {
     suspend fun uploadFile(
         @Part file: MultipartBody.Part
     ): BaseResponse<String>
+
+    @retrofit2.http.GET("hardware/common/getPath")
+    suspend fun getPath(): BaseResponse<String>
 }
