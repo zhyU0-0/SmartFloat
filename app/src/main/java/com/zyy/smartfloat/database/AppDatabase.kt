@@ -16,13 +16,14 @@ class AppDatabase(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME, n
 
     companion object {
         private const val DATABASE_NAME = "smart_float.db"
-        private const val DATABASE_VERSION = 1
+        private const val DATABASE_VERSION = 2
 
         // ModelConfig 表
         private const val TABLE_MODEL_CONFIG = "model_config"
         private const val COL_MODEL_ID = "id"
         private const val COL_MODEL_NAME = "modelName"
         private const val COL_API_KEY = "apiKey"
+        private const val COL_BASE_URL = "baseUrl"
         private const val COL_IS_ACTIVE = "isActive"
         private const val COL_CREATED_AT = "createdAt"
 
@@ -55,6 +56,7 @@ class AppDatabase(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME, n
                 $COL_MODEL_ID INTEGER PRIMARY KEY AUTOINCREMENT,
                 $COL_MODEL_NAME TEXT NOT NULL,
                 $COL_API_KEY TEXT NOT NULL,
+                $COL_BASE_URL TEXT,
                 $COL_IS_ACTIVE INTEGER DEFAULT 0,
                 $COL_CREATED_AT INTEGER NOT NULL
             )
@@ -79,9 +81,10 @@ class AppDatabase(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME, n
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
-        db.execSQL("DROP TABLE IF EXISTS $TABLE_MODEL_CONFIG")
-        db.execSQL("DROP TABLE IF EXISTS $TABLE_CONVERSATION")
-        onCreate(db)
+        if (oldVersion < 2) {
+            // 添加 baseUrl 列
+            db.execSQL("ALTER TABLE $TABLE_MODEL_CONFIG ADD COLUMN $COL_BASE_URL TEXT")
+        }
     }
 
     // ==================== ModelConfig 操作 ====================
@@ -91,6 +94,7 @@ class AppDatabase(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME, n
         val values = ContentValues().apply {
             put(COL_MODEL_NAME, model.modelName)
             put(COL_API_KEY, model.apiKey)
+            put(COL_BASE_URL, model.baseUrl)
             put(COL_IS_ACTIVE, if (model.isActive) 1 else 0)
             put(COL_CREATED_AT, model.createdAt)
         }
@@ -102,6 +106,7 @@ class AppDatabase(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME, n
         val values = ContentValues().apply {
             put(COL_MODEL_NAME, model.modelName)
             put(COL_API_KEY, model.apiKey)
+            put(COL_BASE_URL, model.baseUrl)
             put(COL_IS_ACTIVE, if (model.isActive) 1 else 0)
         }
         return db.update(TABLE_MODEL_CONFIG, values, "$COL_MODEL_ID = ?", arrayOf(model.id.toString()))
@@ -166,6 +171,7 @@ class AppDatabase(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME, n
                     id = cursor.getLong(cursor.getColumnIndexOrThrow(COL_MODEL_ID)),
                     modelName = cursor.getString(cursor.getColumnIndexOrThrow(COL_MODEL_NAME)),
                     apiKey = cursor.getString(cursor.getColumnIndexOrThrow(COL_API_KEY)),
+                    baseUrl = cursor.getString(cursor.getColumnIndex(COL_BASE_URL)),
                     isActive = cursor.getInt(cursor.getColumnIndexOrThrow(COL_IS_ACTIVE)) == 1,
                     createdAt = cursor.getLong(cursor.getColumnIndexOrThrow(COL_CREATED_AT))
                 )

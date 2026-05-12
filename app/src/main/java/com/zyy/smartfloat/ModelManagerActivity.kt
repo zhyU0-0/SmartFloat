@@ -49,6 +49,7 @@ fun ModelManagerScreen(
     }
 
     var showAddDialog by remember { mutableStateOf(false) }
+    var editingModelId by remember { mutableStateOf<Long?>(null) }
     var newModelName by remember { mutableStateOf("") }
     var newApiKey by remember { mutableStateOf("") }
     var newBaseUrl by remember { mutableStateOf("") }
@@ -89,37 +90,48 @@ fun ModelManagerScreen(
             ) {
                 items(viewModel.models) { model ->
                     ModelCard(
-                        model = model,
-                        isActive = model.isActive,
-                        onSelect = {
-                            viewModel.setActiveModel(model.id)
-                        },
-                        onDelete = {
-                            viewModel.deleteModel(model)
-                        }
-                    )
+                            model = model,
+                            isActive = model.isActive,
+                            onSelect = {
+                                viewModel.setActiveModel(model.id)
+                            },
+                            onDelete = {
+                                viewModel.deleteModel(model)
+                            },
+                            onEdit = {
+                                // 点击编辑时填充数据到弹窗
+                                editingModelId = model.id
+                                newModelName = model.modelName
+                                newApiKey = model.apiKey
+                                newBaseUrl = model.baseUrl ?: ""
+                                showAddDialog = true
+                            }
+                        )
                 }
             }
         }
 
-        // 添加模型对话框
+        // 添加/编辑模型对话框
         if (showAddDialog) {
             AlertDialog(
-                onDismissRequest = { showAddDialog = false },
-                title = { Text("添加新模型") },
+                onDismissRequest = { 
+                    showAddDialog = false 
+                    editingModelId = null
+                },
+                title = { Text(if (editingModelId != null) "编辑模型" else "添加新模型") },
                 text = {
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         OutlinedTextField(
                             value = newModelName,
                             onValueChange = { newModelName = it },
                             label = { Text("模型名称") },
-                            placeholder = { Text("例如：doubao-seed-2-0-pro-260215") }
+                            placeholder = { Text("例如：doubao-seed-2-0-pro-26cccc") }
                         )
                         OutlinedTextField(
                             value = newApiKey,
                             onValueChange = { newApiKey = it },
                             label = { Text("API Key") },
-                            placeholder = { Text("例如：8a096786-d383-4778-968a-d2e0a9f835df") }
+                            placeholder = { Text("例如：8a096786-xxxx-4778-968a-ccc") }
                         )
                         OutlinedTextField(
                             value = newBaseUrl,
@@ -132,20 +144,33 @@ fun ModelManagerScreen(
                 confirmButton = {
                     Button(
                         onClick = {
-                            if (newModelName.isNotEmpty() && newApiKey.isNotEmpty()) {
-                                viewModel.addModel(newModelName, newApiKey, newBaseUrl)
+                            if (newModelName.isNotEmpty() && newApiKey.isNotEmpty() && newBaseUrl.isNotEmpty()) {
+                                if (editingModelId != null) {
+                                    // 编辑模式：更新模型
+                                    viewModel.updateModel(editingModelId!!, newModelName, newApiKey, newBaseUrl)
+                                } else {
+                                    // 添加模式：添加新模型
+                                    viewModel.addModel(newModelName, newApiKey, newBaseUrl)
+                                }
                                 newModelName = ""
                                 newApiKey = ""
                                 newBaseUrl = ""
+                                editingModelId = null
                                 showAddDialog = false
                             }
                         }
                     ) {
-                        Text("确认添加")
+                        Text("保存")
                     }
                 },
                 dismissButton = {
-                    Button(onClick = { showAddDialog = false }) {
+                    Button(onClick = {
+                        newModelName = ""
+                        newApiKey = ""
+                        newBaseUrl = ""
+                        showAddDialog = false 
+                        editingModelId = null
+                    }) {
                         Text("取消")
                     }
                 }
@@ -159,7 +184,8 @@ fun ModelCard(
     model: ModelConfig,
     isActive: Boolean,
     onSelect: () -> Unit,
-    onDelete: () -> Unit
+    onDelete: () -> Unit,
+    onEdit: () -> Unit
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -168,6 +194,7 @@ fun ModelCard(
         } else {
             CardDefaults.cardColors()
         }
+        // 添加点击事件
     ) {
         Column(modifier = Modifier.padding(12.dp)) {
             Row(
@@ -189,14 +216,6 @@ fun ModelCard(
                 }
             }
 
-            Spacer(modifier = Modifier.height(4.dp))
-
-            Text(
-                text = "API Key: ${model.apiKey}",
-                fontSize = 14.sp,
-                color = Color.Gray
-            )
-
             Spacer(modifier = Modifier.height(8.dp))
 
             Row(
@@ -208,6 +227,9 @@ fun ModelCard(
                     TextButton(onClick = onSelect) {
                         Text("使用")
                     }
+                }
+                TextButton(onClick = onEdit) {
+                    Text("编辑")
                 }
                 TextButton(onClick = onDelete) {
                     Text("删除")
@@ -242,6 +264,7 @@ class ModelManagerViewModel : ViewModel() {
             val model = ModelConfig(
                 modelName = modelName,
                 apiKey = apiKey,
+                baseUrl = baseUrl,
                 isActive = models.isEmpty(),
                 createdAt = System.currentTimeMillis()
             )
@@ -258,6 +281,20 @@ class ModelManagerViewModel : ViewModel() {
     fun deleteModel(model: ModelConfig) {
         viewModelScope.launch {
             repository.deleteModel(model)
+        }
+    }
+
+    fun updateModel(modelId: Long, modelName: String, apiKey: String, baseUrl: String) {
+        viewModelScope.launch {
+            val model = models.find { it.id == modelId }
+            if (model != null) {
+                val updatedModel = model.copy(
+                    modelName = modelName,
+                    apiKey = apiKey,
+                    baseUrl = baseUrl
+                )
+                repository.updateModel(updatedModel)
+            }
         }
     }
 }

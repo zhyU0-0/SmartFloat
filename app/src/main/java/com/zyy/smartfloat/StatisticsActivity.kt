@@ -208,11 +208,12 @@ fun TokenUsageBarChart(
             val left = 16.dp.toPx() + index * (barWidth + barSpacing)
             val top = canvasHeight - 40.dp.toPx() - barHeight
 
+
             // 绘制条形
             drawRect(
                 color = Color(0xFF4CAF50),
                 topLeft = Offset(left, top),
-                size = androidx.compose.ui.geometry.Size(barWidth - barSpacing, barHeight)
+                size = androidx.compose.ui.geometry.Size(barWidth - barSpacing, barHeight),
             )
 
             // 绘制日期标签
@@ -225,6 +226,12 @@ fun TokenUsageBarChart(
                 usage.date.takeLast(5),
                 left + (barWidth - barSpacing) / 2,
                 canvasHeight - 10.dp.toPx(),
+                textPaint
+            )
+            drawContext.canvas.nativeCanvas.drawText(
+                usage.totalToken.toString(),
+                left + (barWidth - barSpacing) / 2,
+                canvasHeight-barHeight - 50.dp.toPx(),
                 textPaint
             )
         }

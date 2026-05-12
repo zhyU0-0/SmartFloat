@@ -14,10 +14,18 @@ import java.util.concurrent.TimeUnit
 object RetrofitClient {
 
     private const val UPLOAD_BASE_URL = "http://47.112.208.118:5080/"
-    private const val LLM_BASE_URL = "https://ark.cn-beijing.volces.com/"
 
     val uploadApi: UploadApi by lazy { uploadRetrofit.create(UploadApi::class.java) }
-    val llmApi: LlmApi by lazy { llmRetrofit.create(LlmApi::class.java) }
+
+    // 根据传入的 baseUrl 获取 LlmApi
+    fun getLlmApi(baseUrl: String): LlmApi {
+        val retrofit = Retrofit.Builder()
+            .baseUrl(baseUrl)
+            .client(okHttpClient)
+            .addConverterFactory(GsonConverterFactory.create())
+            .build()
+        return retrofit.create(LlmApi::class.java)
+    }
 
     private const val MAX_LOG_LENGTH = 3000
     private const val MAX_BINARY_DETECTION = 100
@@ -66,7 +74,10 @@ object RetrofitClient {
     private val tokenInterceptor = Interceptor { chain ->
         val originalRequest = chain.request()
         val newRequest = originalRequest.newBuilder()
-            .header("token", com.zyy.smartfloat.MyApp.instance.getString(com.zyy.smartfloat.R.string.image_token))
+            .header(
+                "token",
+                com.zyy.smartfloat.MyApp.instance.getString(com.zyy.smartfloat.R.string.image_token)
+            )
             .build()
         chain.proceed(newRequest)
     }
@@ -74,14 +85,14 @@ object RetrofitClient {
     private fun isBinaryContent(message: String): Boolean {
         var nonPrintableCount = 0
         val checkLength = minOf(message.length, MAX_BINARY_DETECTION)
-        
+
         for (i in 0 until checkLength) {
             val char = message[i]
             if (char.toInt() < 32 && char != '\n' && char != '\r' && char != '\t') {
                 nonPrintableCount++
             }
         }
-        
+
         return nonPrintableCount > checkLength / 3
     }
 
@@ -89,14 +100,6 @@ object RetrofitClient {
         Retrofit.Builder()
             .baseUrl(UPLOAD_BASE_URL)
             .client(uploadOkHttpClient)
-            .addConverterFactory(GsonConverterFactory.create())
-            .build()
-    }
-
-    private val llmRetrofit: Retrofit by lazy {
-        Retrofit.Builder()
-            .baseUrl(LLM_BASE_URL)
-            .client(okHttpClient)
             .addConverterFactory(GsonConverterFactory.create())
             .build()
     }

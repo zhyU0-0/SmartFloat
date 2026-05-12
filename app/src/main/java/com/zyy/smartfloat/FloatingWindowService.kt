@@ -32,10 +32,11 @@ import androidx.core.app.ActivityCompat
 import androidx.core.app.NotificationCompat
 import androidx.localbroadcastmanager.content.LocalBroadcastManager
 import com.google.gson.Gson
-/*import com.google.mlkit.vision.common.InputImage
+import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.text.Text
 import com.google.mlkit.vision.text.TextRecognition
-import com.google.mlkit.vision.text.TextRecognizer*/
+import com.google.mlkit.vision.text.TextRecognizer
+import com.google.mlkit.vision.text.latin.TextRecognizerOptions
 import com.zyy.smartfloat.network.ImageUrl
 import com.zyy.smartfloat.network.LlmContent
 import com.zyy.smartfloat.network.LlmMessage
@@ -52,6 +53,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.MultipartBody
@@ -60,6 +62,7 @@ import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.FileOutputStream
+import kotlin.coroutines.resumeWithException
 
 class FloatingWindowService : Service() {
 
@@ -419,10 +422,10 @@ class FloatingWindowService : Service() {
                 val bitmap = a11yService.captureScreenshot()
                 Log.d(TAG, "screenshot captured: ${bitmap.width}x${bitmap.height}")
 
-                /*val recognizedTextResult = recognizeTextFromBitmap(bitmap)
+                val recognizedTextResult = recognizeTextFromBitmap(bitmap)
                 Log.d(TAG, "text recognition result: $recognizedTextResult")
 
-                sendImageRecognitionResult(recognizedTextResult)*/
+                sendImageRecognitionResult(recognizedTextResult)
 
                 withContext(Dispatchers.Main) {
                     redButton?.visibility = View.VISIBLE
@@ -499,6 +502,7 @@ class FloatingWindowService : Service() {
                     val apiKey = activeModel?.apiKey ?: getString(R.string.llm_api_key)
                     val model = activeModel?.modelName ?: getString(R.string.llm_model)
                     val modelId = activeModel?.id ?: 0L
+                    val baseUrl = activeModel?.baseUrl ?: getString(R.string.llm_base_url)
 
                     val request = LlmRequest(
                         model = model,
@@ -519,7 +523,8 @@ class FloatingWindowService : Service() {
                         )
                     )
 
-                    val response = RetrofitClient.llmApi.chatCompletion(
+                    val llmApi = RetrofitClient.getLlmApi(baseUrl)
+                    val response = llmApi.chatCompletion(
                         auth = "Bearer $apiKey",
                         request = request
                     )
@@ -643,44 +648,49 @@ class FloatingWindowService : Service() {
         LocalBroadcastManager.getInstance(this).sendBroadcast(intent)
     }
 
-    /*private suspend fun recognizeTextFromBitmap(bitmap: Bitmap): String {
+    private suspend fun recognizeTextFromBitmap(bitmap: Bitmap): String {
         return withContext(Dispatchers.IO) {
             try {
-                val image = InputImage.fromBitmap(bitmap, 0)
-                val recognizer = TextRecognition.getClient()
-                
-                val result = kotlin.runCatching {
-                    recognizer.process(image).get()
-                }.getOrNull()
+                Log.d(TAG, "开始识别，bitmap尺寸: ${bitmap.width}x${bitmap.height}")
 
-                if (result != null) {
-                    val sb = StringBuilder()
-                    sb.append("识别到的文本：\n")
-                    
-                    for (block in result.textBlocks) {
-                        for (line in block.lines) {
-                            for (element in line.elements) {
-                                sb.append("文本: ${element.text}\n")
-                                sb.append("坐标: (${element.boundingBox?.left}, ${element.boundingBox?.top}) - (${element.boundingBox?.right}, ${element.boundingBox?.bottom})\n")
-                            }
-                            sb.append("\n")
+                val image = InputImage.fromBitmap(bitmap, 0)
+                val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
+
+                // 改用异步监听方式，便于调试
+                val result = suspendCancellableCoroutine { continuation ->
+                    recognizer.process(image)
+                        .addOnSuccessListener { visionText ->
+                            Log.d(TAG, "识别成功")
+                            continuation.resume(visionText) {  }
+                        }
+                        .addOnFailureListener { e ->
+                            Log.e(TAG, "识别失败: ${e.message}", e)
+                            continuation.resumeWithException(e)
+                        }
+                }
+
+                // 解析结果...
+                if (result.text.isEmpty()) {
+                    "未识别到任何文本（图片可能没有清晰文字）"
+                } else {
+                    result.text
+                }
+
+            } catch (e: Exception) {
+                Log.e(TAG, "识别异常: ${e.message}", e)
+                when (e) {
+                    is com.google.mlkit.common.MlKitException -> {
+                        when (e.errorCode) {
+                            com.google.mlkit.common.MlKitException.NOT_FOUND -> "模型未下载完成"
+                            else -> "ML Kit错误: ${e.message}"
                         }
                     }
-                    
-                    if (result.textBlocks.isEmpty()) {
-                        sb.append("未识别到文本")
-                    }
-                    
-                    sb.toString()
-                } else {
-                    "文本识别失败"
+                    else -> "识别失败: ${e.message}"
                 }
-            } catch (e: Exception) {
-                Log.e(TAG, "Text recognition failed: ${e.message}", e)
-                "文本识别异常: ${e.message}"
             }
         }
-    }*/
+    }
+
 
 
     private fun scaleDown(bitmap: Bitmap, maxWidth: Int = 540, maxHeight: Int = 1200): Bitmap {
@@ -804,8 +814,8 @@ class FloatingWindowService : Service() {
         return try {
             val response = RetrofitClient.uploadApi.getPath()
             if (response.code == 1 && response.data != null) {
-                prefs.edit().putString("image_path", response.data).apply()
-                cachedImagePath = response.data
+                prefs.edit().putString("image_path", response.data+".png").apply()
+                cachedImagePath = response.data+".png"
                 Log.d(TAG, "getImagePath from API: ${response.data}")
                 response.data+".png"
             } else {

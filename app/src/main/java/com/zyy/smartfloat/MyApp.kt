@@ -38,6 +38,7 @@ class MyApp : Application() {
             if (models.isEmpty()) {
                 // 从 key.xml 读取默认配置
                 val modelName = getString(R.string.llm_model)
+                val baseUrl = getString(R.string.llm_base_url)
                 val apiKey = getString(R.string.llm_api_key)
                 
                 if (modelName.isNotEmpty() && apiKey.isNotEmpty()) {
@@ -45,6 +46,7 @@ class MyApp : Application() {
                         modelName = modelName,
                         apiKey = apiKey,
                         isActive = true,
+                        baseUrl = baseUrl,
                         createdAt = System.currentTimeMillis()
                     )
                     repository.insertModel(defaultModel)
