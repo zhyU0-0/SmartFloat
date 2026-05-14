@@ -66,7 +66,9 @@ class VoiceRecognizer(
                 mainHandler.post { onResultCallback?.invoke(result) }
             } else {
                 Log.e(TAG, "recognizeAudio: 识别失败, error=$error")
-                mainHandler.post { onErrorCallback?.invoke(error ?: "识别失败") }
+                mainHandler.post {
+                    onResultCallback?.invoke("空")
+                    onErrorCallback?.invoke(error ?: "识别失败") }
             }
         }
     }

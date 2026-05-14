@@ -22,6 +22,7 @@ import android.view.LayoutInflater
 import android.view.MotionEvent
 import android.view.View
 import android.view.WindowManager
+import android.widget.EditText
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
@@ -84,15 +85,18 @@ class FloatingWindowService : Service() {
     private var longPressTriggered = false
     private val LONG_PRESS_THRESHOLD = 500L // 长按阈值500ms
     private val mainHandler = Handler(Looper.getMainLooper())
-    private var floatingText: TextView? = null
+    private var floatingText: EditText? = null
     private var floatingIcon: ImageView? = null
     private var cleanButton: ImageView? = null
+    private var editButton: ImageView? = null
     private var submitButton: ImageView? = null
+    private var isEditing = false
     private var recognizedText: String = ""
     private var isProcessing = false
     private val currentTaskId = java.util.concurrent.atomic.AtomicLong(0)
     private var lastTapPoints = mutableListOf<TapPoints>()
     private var redButton: CardView? = null
+    private var floatLayoutParams: WindowManager.LayoutParams? = null
 
     private val prefs by lazy { getSharedPreferences("smart_float_prefs", MODE_PRIVATE) }
     private var cachedImagePath: String? = null
@@ -224,6 +228,7 @@ class FloatingWindowService : Service() {
                 x = 100
                 y = 300
             }
+            floatLayoutParams = layoutParams
 
             val inflater = LayoutInflater.from(applicationContext)
             floatView = inflater.inflate(R.layout.floating_button, null)
@@ -231,18 +236,55 @@ class FloatingWindowService : Service() {
             floatingText = floatView!!.findViewById(R.id.floating_text)
             floatingIcon = floatView!!.findViewById(R.id.floating_icon)
             cleanButton = floatView!!.findViewById(R.id.clean_floating_text_button)
+            editButton = floatView!!.findViewById(R.id.edit_floating_text_button)
             submitButton = floatView!!.findViewById(R.id.submit_floating_text_button)
             updateFloatingText()
 
-            cleanButton?.setOnClickListener {
-                if (recognizedText.isNotEmpty()) {
-                    recognizedText = ""
+            floatingText?.setOnFocusChangeListener { _, hasFocus ->
+                val params = floatLayoutParams ?: return@setOnFocusChangeListener
+                if (hasFocus) {
+                    params.flags = params.flags and WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE.inv()
+                } else {
+                    params.flags = params.flags or WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
+                }
+                windowManager?.updateViewLayout(floatView, params)
+            }
+
+            editButton?.setOnClickListener {
+                isEditing = !isEditing
+                if (isEditing) {
+                    // 进入编辑模式
+                    floatingText?.visibility = android.view.View.VISIBLE
+                    floatingIcon?.visibility = android.view.View.GONE
+                    floatingText?.requestFocus()
+                    // 显示软键盘
+                    val imm = getSystemService(INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager
+                    imm.showSoftInput(floatingText, android.view.inputmethod.InputMethodManager.SHOW_IMPLICIT)
+                } else {
+                    // 退出编辑模式
+                    floatingText?.clearFocus()
+                    recognizedText = floatingText?.text?.toString() ?: ""
+                    val imm = getSystemService(INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager
+                    imm.hideSoftInputFromWindow(floatingText?.windowToken, 0)
                     updateFloatingText()
+                }
+            }
+
+            cleanButton?.setOnClickListener {
+                if (isEditing) {
+                    floatingText?.text = null
+                    recognizedText = ""
                 }
             }
 
             submitButton?.setOnClickListener {
                 if (recognizedText.isNotEmpty()) {
+                    // 取消焦点和编辑模式
+                    floatingText?.clearFocus()
+                    isEditing = false
+                    val imm = getSystemService(INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager
+                    imm.hideSoftInputFromWindow(floatingText?.windowToken, 0)
+                    
                     Toast.makeText(this@FloatingWindowService, "截图上传中...", Toast.LENGTH_SHORT).show()
                     captureAndUpload()
                 }
@@ -325,6 +367,7 @@ class FloatingWindowService : Service() {
             onError = { error ->
                 Log.e(TAG, "语音识别失败: $error")
                 isRecording = false
+                sendVoiceRecognitionResult(error)
                 mainHandler.post {
                     resetButtonColor()
                     updateFloatingText()
@@ -358,13 +401,23 @@ class FloatingWindowService : Service() {
     }
 
     private fun updateFloatingText() {
-        if (recognizedText.isNotEmpty()) {
-            floatingText?.text = recognizedText
+        if (isEditing) {
+            // 编辑模式：显示EditText
             floatingText?.visibility = View.VISIBLE
             floatingIcon?.visibility = View.GONE
             cleanButton?.visibility = View.VISIBLE
+            editButton?.visibility = View.VISIBLE
+            submitButton?.visibility = View.VISIBLE
+        } else if (recognizedText.isNotEmpty()) {
+            // 有文本但不在编辑模式
+            floatingText?.setText(recognizedText)
+            floatingText?.visibility = View.VISIBLE
+            floatingIcon?.visibility = View.GONE
+            cleanButton?.visibility = View.VISIBLE
+            editButton?.visibility = View.VISIBLE
             submitButton?.visibility = View.VISIBLE
         } else {
+            // 无文本且不在编辑模式
             floatingText?.visibility = View.GONE
             floatingIcon?.visibility = View.VISIBLE
             if (isProcessing) {
@@ -373,6 +426,7 @@ class FloatingWindowService : Service() {
                 floatingIcon?.setImageResource(R.drawable.ic_microphone)
             }
             cleanButton?.visibility = View.GONE
+            editButton?.visibility = View.GONE
             submitButton?.visibility = View.GONE
         }
     }
