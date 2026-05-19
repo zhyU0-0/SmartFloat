@@ -136,7 +136,7 @@ fun ModelManagerScreen(
                         OutlinedTextField(
                             value = newBaseUrl,
                             onValueChange = { newBaseUrl = it },
-                            label = { Text("Base URL") },
+                            label = { Text("Complete URL") },
                             placeholder = { Text("例如：https://ark.cn-beijing.volces.com/") }
                         )
                     }

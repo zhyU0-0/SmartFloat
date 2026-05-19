@@ -21,7 +21,8 @@ data class LLmBody(
     val question: String,
     val maxX: Int,
     val maxY: Int,
-    val history: List<ProcessHistory>
+    val history: List<ProcessHistory>,
+    var content: String?
 )
 
 data class ProcessHistory(

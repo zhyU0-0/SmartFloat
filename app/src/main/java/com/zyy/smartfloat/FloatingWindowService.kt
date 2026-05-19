@@ -12,6 +12,7 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.PixelFormat
+import android.graphics.Rect
 import android.os.Build
 import android.os.Handler
 import android.os.IBinder
@@ -36,7 +37,7 @@ import com.google.gson.Gson
 import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.text.Text
 import com.google.mlkit.vision.text.TextRecognition
-import com.google.mlkit.vision.text.TextRecognizer
+import com.google.mlkit.vision.text.chinese.ChineseTextRecognizerOptions
 import com.google.mlkit.vision.text.latin.TextRecognizerOptions
 import com.zyy.smartfloat.network.ImageUrl
 import com.zyy.smartfloat.network.LlmContent
@@ -103,6 +104,7 @@ class FloatingWindowService : Service() {
 
     // 用于接收从 Intent 传递的问题
     private var llmQuestion: String = ""
+    private var isImage: Boolean = false
 
     companion object {
         const val CHANNEL_ID = "floating_window_channel"
@@ -244,6 +246,7 @@ class FloatingWindowService : Service() {
                 val params = floatLayoutParams ?: return@setOnFocusChangeListener
                 if (hasFocus) {
                     params.flags = params.flags and WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE.inv()
+                    editButton?.setImageResource(R.drawable.ic_complete)
                 } else {
                     params.flags = params.flags or WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
                 }
@@ -260,6 +263,7 @@ class FloatingWindowService : Service() {
                     // 显示软键盘
                     val imm = getSystemService(INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager
                     imm.showSoftInput(floatingText, android.view.inputmethod.InputMethodManager.SHOW_IMPLICIT)
+                    editButton?.setImageResource(R.drawable.ic_complete)
                 } else {
                     // 退出编辑模式
                     floatingText?.clearFocus()
@@ -267,14 +271,23 @@ class FloatingWindowService : Service() {
                     val imm = getSystemService(INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager
                     imm.hideSoftInputFromWindow(floatingText?.windowToken, 0)
                     updateFloatingText()
+                    editButton?.setImageResource(R.drawable.ic_edit)
                 }
             }
 
             cleanButton?.setOnClickListener {
-                if (isEditing) {
-                    floatingText?.text = null
-                    recognizedText = ""
-                }
+                // 清空文本
+                floatingText?.text = null
+                recognizedText = ""
+                // 退出编辑模式
+                isEditing = false
+                floatingText?.clearFocus()
+                // 隐藏软键盘
+                val imm = getSystemService(INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager
+                imm.hideSoftInputFromWindow(floatingText?.windowToken, 0)
+                // 更新UI回到原始状态
+                updateFloatingText()
+                Log.d(TAG,"clean Editing")
             }
 
             submitButton?.setOnClickListener {
@@ -467,7 +480,16 @@ class FloatingWindowService : Service() {
                     }
                     return@launch
                 }
-
+                /*withContext(Dispatchers.Main) {
+                    redButton?.visibility = View.GONE
+                }
+                delay(100)
+                //获取元素
+                getAllClickableNodes()
+                delay(100)
+                withContext(Dispatchers.Main) {
+                    redButton?.visibility = View.VISIBLE
+                }*/
                 withContext(Dispatchers.Main) {
                     redButton?.visibility = View.GONE
                 }
@@ -484,18 +506,21 @@ class FloatingWindowService : Service() {
                 withContext(Dispatchers.Main) {
                     redButton?.visibility = View.VISIBLE
                 }
+                var imageUrl: String = ""
+                if(isImage){
+                    val file = saveBitmapToFile(bitmap)
+                    Log.d(TAG, "screenshot saved to: ${file.absolutePath}")
 
-                val file = saveBitmapToFile(bitmap)
-                Log.d(TAG, "screenshot saved to: ${file.absolutePath}")
+                    imageUrl = uploadScreenshot(file)
+                    Log.d(TAG, "upload success, url: $imageUrl")
 
-                val imageUrl = uploadScreenshot(file)
-                Log.d(TAG, "upload success, url: $imageUrl")
-
-                withContext(Dispatchers.Main) {
-                    Toast.makeText(this@FloatingWindowService, "上传成功: $imageUrl", Toast.LENGTH_LONG).show()
+                    withContext(Dispatchers.Main) {
+                        Toast.makeText(this@FloatingWindowService, "上传成功: $imageUrl", Toast.LENGTH_LONG).show()
+                    }
                 }
 
-                sendToLlm(taskId, imageUrl, recognizedText)
+
+                sendToLlm(taskId, imageUrl, recognizedText,recognizedTextResult)
 
                 mainHandler.post {
                     recognizedText = ""
@@ -511,6 +536,94 @@ class FloatingWindowService : Service() {
         }
     }
 
+    fun getAllClickableNodes() {
+        val a11yService = TapAccessibilityService.instance
+        if (a11yService == null) {
+            Log.e(TAG, "getAllClickableNodes: Accessibility service not available")
+            showToastOnMainThread("无障碍服务未开启")
+            return
+        }
+
+        val rootNode = a11yService.rootInActiveWindow
+        if (rootNode == null) {
+            Log.e(TAG, "getAllClickableNodes: Root node is null - check if accessibility service is properly connected")
+            showToastOnMainThread("无法获取当前窗口信息")
+            return
+        }
+
+        val clickableNodes = mutableListOf<NodeInfo>()
+        collectClickableNodes(rootNode, clickableNodes)
+
+        if (clickableNodes.isEmpty()) {
+            Log.d(TAG, "getAllClickableNodes: No clickable nodes found")
+            return
+        }
+
+        Log.d(TAG, "========== Clickable Nodes Found (${clickableNodes.size}) ==========")
+        clickableNodes.forEachIndexed { index, node ->
+            Log.d(TAG, "Node ${index + 1}:")
+            Log.d(TAG, "  Text: ${node.text ?: "N/A"}")
+            Log.d(TAG, "  ContentDescription: ${node.contentDescription ?: "N/A"}")
+            Log.d(TAG, "  ClassName: ${node.className ?: "N/A"}")
+            Log.d(TAG, "  Bounds: ${node.bounds}")
+            Log.d(TAG, "  Center X: ${node.centerX}, Center Y: ${node.centerY}")
+        }
+        Log.d(TAG, "============================================================")
+    }
+
+    private fun showToastOnMainThread(message: String) {
+        mainHandler.post {
+            Toast.makeText(this@FloatingWindowService, message, Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private data class NodeInfo(
+        val text: CharSequence?,
+        val contentDescription: CharSequence?,
+        val className: CharSequence?,
+        val bounds: android.graphics.Rect,
+        val centerX: Float,
+        val centerY: Float
+    )
+
+    private fun collectClickableNodes(node: android.view.accessibility.AccessibilityNodeInfo, result: MutableList<NodeInfo>) {
+        try {
+            // 检查节点是否可点击
+            if (node.isClickable || node.isFocusable || node.isLongClickable) {
+                val bounds = android.graphics.Rect()
+                node.getBoundsInScreen(bounds)
+
+                // 过滤过小的节点（可能是图标）
+                if (bounds.width() >= 20 && bounds.height() >= 20) {
+                    val centerX = bounds.left + (bounds.width() / 2f)
+                    val centerY = bounds.top + (bounds.height() / 2f)
+
+                    result.add(
+                        NodeInfo(
+                            text = node.text,
+                            contentDescription = node.contentDescription,
+                            className = node.className,
+                            bounds = bounds,
+                            centerX = centerX,
+                            centerY = centerY
+                        )
+                    )
+                }
+            }
+
+            // 递归遍历子节点
+            for (i in 0 until node.childCount) {
+                val child = node.getChild(i)
+                if (child != null) {
+                    collectClickableNodes(child, result)
+                    child.recycle()
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error collecting clickable nodes: ${e.message}", e)
+        }
+    }
+
     private fun cancelProcessing() {
         currentTaskId.incrementAndGet()
         isProcessing = false
@@ -522,10 +635,14 @@ class FloatingWindowService : Service() {
     }
 
     @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
-    private fun sendToLlm(taskId: Long, imageUrl: String, question: String) {
+    private fun sendToLlm(taskId: Long, imageUrl: String?, question: String, content: String?) {
         serviceScope.launch {
+            if((content == null || content == "") && (imageUrl == "" || imageUrl == null)){
+                return@launch
+            }
             val history = mutableListOf<ProcessHistory>()
             var currentImageUrl = imageUrl
+            var currentContent = content
             var loopCount = 0
 
             while (loopCount < maxLoops) {
@@ -546,39 +663,58 @@ class FloatingWindowService : Service() {
                 val gson = Gson()
                 val json = gson.toJson(lLmResponseExample)
                 val llmPrompt = buildLlmPrompt(this@FloatingWindowService, json)
-                val llmBody = LLmBody(llmPrompt, question, screenWidth, screenHeight, history)
+                val llmBody = LLmBody(llmPrompt, question, screenWidth, screenHeight, history,"")
 
                 try {
                     val startTime = System.currentTimeMillis()
-                    
                     // 从数据库获取活跃模型配置
                     val activeModel = MyApp.repository.getActiveModelSync()
                     val apiKey = activeModel?.apiKey ?: getString(R.string.llm_api_key)
                     val model = activeModel?.modelName ?: getString(R.string.llm_model)
                     val modelId = activeModel?.id ?: 0L
                     val baseUrl = activeModel?.baseUrl ?: getString(R.string.llm_base_url)
-
-                    val request = LlmRequest(
-                        model = model,
-                        messages = listOf(
-                            LlmMessage(
-                                role = "user",
-                                content = listOf(
-                                    LlmContent(
-                                        type = "image_url",
-                                        image_url = ImageUrl(url = currentImageUrl)
-                                    ),
-                                    LlmContent(
-                                        type = "text",
-                                        text = gson.toJson(llmBody)
+                    var request:LlmRequest;
+                    if(isImage && currentImageUrl != null){
+                        request = LlmRequest(
+                            model = model,
+                            messages = listOf(
+                                LlmMessage(
+                                    role = "user",
+                                    content = listOf(
+                                        LlmContent(
+                                            type = "image_url",
+                                            image_url = ImageUrl(url = currentImageUrl)
+                                        ),
+                                        LlmContent(
+                                            type = "text",
+                                            text = gson.toJson(llmBody)
+                                        )
                                     )
                                 )
                             )
                         )
-                    )
+                    }else{
+                        llmBody.content = currentContent
+                        request = LlmRequest(
+                            model = model,
+                            messages = listOf(
+                                LlmMessage(
+                                    role = "user",
+                                    content = listOf(
+                                        LlmContent(
+                                            type = "text",
+                                            text = gson.toJson(llmBody)
+                                        )
+                                    )
+                                )
+                            )
+                        )
+                    }
+
 
                     val llmApi = RetrofitClient.getLlmApi(baseUrl)
                     val response = llmApi.chatCompletion(
+                        url = baseUrl,
                         auth = "Bearer $apiKey",
                         request = request
                     )
@@ -644,18 +780,26 @@ class FloatingWindowService : Service() {
 
                             val bitmap = TapAccessibilityService.instance?.captureScreenshot()
 
-                            withContext(Dispatchers.Main) {
-                                redButton?.visibility = View.VISIBLE
+                            if(isImage){
+                                withContext(Dispatchers.Main) {
+                                    redButton?.visibility = View.VISIBLE
+                                }
+
+                                if (bitmap != null) {
+                                    val file = saveBitmapToFile(bitmap)
+                                    currentImageUrl = uploadScreenshot(file)
+                                    Log.d(TAG, "重新截图上传: $currentImageUrl")
+                                } else {
+                                    Log.e(TAG, "重新截图失败")
+                                    break
+                                }
+                            }else{
+                                if (bitmap != null) {
+                                    currentContent = recognizeTextFromBitmap(bitmap)
+                                }
+
                             }
 
-                            if (bitmap != null) {
-                                val file = saveBitmapToFile(bitmap)
-                                currentImageUrl = uploadScreenshot(file)
-                                Log.d(TAG, "重新截图上传: $currentImageUrl")
-                            } else {
-                                Log.e(TAG, "重新截图失败")
-                                break
-                            }
                         }
                     }
                 } catch (e: kotlinx.coroutines.CancellationException) {
@@ -708,26 +852,77 @@ class FloatingWindowService : Service() {
                 Log.d(TAG, "开始识别，bitmap尺寸: ${bitmap.width}x${bitmap.height}")
 
                 val image = InputImage.fromBitmap(bitmap, 0)
-                val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
-
-                // 改用异步监听方式，便于调试
-                val result = suspendCancellableCoroutine { continuation ->
-                    recognizer.process(image)
-                        .addOnSuccessListener { visionText ->
-                            Log.d(TAG, "识别成功")
-                            continuation.resume(visionText) {  }
-                        }
-                        .addOnFailureListener { e ->
-                            Log.e(TAG, "识别失败: ${e.message}", e)
-                            continuation.resumeWithException(e)
-                        }
+                // 第一次：英文识别器
+                Log.d(TAG, "使用英文识别器识别")
+                val latinRecognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
+                val latinResult = suspendCancellableCoroutine<Text?> { continuation ->
+                    latinRecognizer.process(image)
+                        .addOnSuccessListener { continuation.resume(it) {} }
+                        .addOnFailureListener { continuation.resume(null) {} }
                 }
 
-                // 解析结果...
-                if (result.text.isEmpty()) {
+                // 第二次：中文识别器
+                Log.d(TAG, "使用中文识别器识别")
+                val chineseOptions = ChineseTextRecognizerOptions.Builder().build()
+                val chineseRecognizer = TextRecognition.getClient(chineseOptions)
+                val chineseResult = suspendCancellableCoroutine<Text?> { continuation ->
+                    chineseRecognizer.process(image)
+                        .addOnSuccessListener { continuation.resume(it) {} }
+                        .addOnFailureListener { continuation.resume(null) {} }
+                }
+
+                // 合并结果去重
+                val recognizedTexts = mutableSetOf<String>()
+                val allBlocks = mutableListOf<Pair<Text.TextBlock, String>>()
+
+                // 添加英文识别结果
+                latinResult?.let {
+                    for (block in it.textBlocks) {
+                        if (!block.text.isBlank()) {
+                            recognizedTexts.add(block.text)
+                            allBlocks.add(Pair(block, "英文"))
+                        }
+                    }
+                }
+
+                // 添加中文识别结果（去重）
+                chineseResult?.let {
+                    for (block in it.textBlocks) {
+                        if (!block.text.isBlank() && !recognizedTexts.contains(block.text)) {
+                            recognizedTexts.add(block.text)
+                            allBlocks.add(Pair(block, "中文"))
+                        }
+                    }
+                }
+
+                // 解析结果，包含坐标信息
+                if (recognizedTexts.isEmpty()) {
                     "未识别到任何文本（图片可能没有清晰文字）"
                 } else {
-                    result.text
+                    val stringBuilder = StringBuilder()
+                    stringBuilder.append("识别到 ${allBlocks.size} 个文本块:\n")
+                    
+                    for ((index, pair) in allBlocks.withIndex()) {
+                        val block = pair.first
+                        val source = pair.second
+                        val blockRect = block.boundingBox
+                        stringBuilder.append("context: \"${block.text}\" ($source)\n")
+                        if (blockRect != null) {
+                            stringBuilder.append("坐标: (${blockRect.centerX()}, ${blockRect.centerY()})\n")
+                            //stringBuilder.append("  边界: 左=${blockRect.left}, 上=${blockRect.top}, 右=${blockRect.right}, 下=${blockRect.bottom}\n")
+                        }
+                        
+ /*                       // 输出每行信息
+                        for (line in block.lines) {
+                            val lineRect = line.boundingBox
+                            stringBuilder.append("    行: \"${line.text}\"\n")
+                            if (lineRect != null) {
+                                stringBuilder.append("      中心: (${lineRect.centerX()}, ${lineRect.centerY()})\n")
+                            }
+                        }*/
+                    }
+                    
+                    stringBuilder.toString()
                 }
 
             } catch (e: Exception) {

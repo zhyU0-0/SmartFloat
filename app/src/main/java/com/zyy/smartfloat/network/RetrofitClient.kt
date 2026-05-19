@@ -20,7 +20,7 @@ object RetrofitClient {
     // 根据传入的 baseUrl 获取 LlmApi
     fun getLlmApi(baseUrl: String): LlmApi {
         val retrofit = Retrofit.Builder()
-            .baseUrl(baseUrl)
+            .baseUrl("http://localhost/")
             .client(okHttpClient)
             .addConverterFactory(GsonConverterFactory.create())
             .build()

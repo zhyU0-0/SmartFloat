@@ -4,10 +4,12 @@ import com.google.gson.annotations.SerializedName
 import retrofit2.http.Body
 import retrofit2.http.Header
 import retrofit2.http.POST
+import retrofit2.http.Url
 
 interface LlmApi {
-    @POST("api/v3/chat/completions")
+    @POST
     suspend fun chatCompletion(
+        @Url url: String,
         @Header("Authorization") auth: String,
         @Body request: LlmRequest
     ): LlmResponse
