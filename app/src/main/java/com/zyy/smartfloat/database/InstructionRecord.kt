@@ -1,4 +1,4 @@
-package com.zyy.smartfloat
+package com.zyy.smartfloat.database
 
 data class InstructionRecord(
     val instruction: String,

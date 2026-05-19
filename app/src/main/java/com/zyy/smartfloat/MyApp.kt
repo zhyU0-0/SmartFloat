@@ -3,7 +3,6 @@ package com.zyy.smartfloat
 import android.app.Application
 import com.zyy.smartfloat.database.AppDatabase
 import com.zyy.smartfloat.database.AppRepository
-import com.zyy.smartfloat.database.ModelConfig
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -13,6 +12,10 @@ class MyApp : Application() {
         lateinit var instance: MyApp
             private set
         lateinit var repository: AppRepository
+            private set
+        
+        // 标志位：是否需要提醒用户添加模型
+        var needAddModelReminder = false
             private set
     }
     
@@ -26,33 +29,22 @@ class MyApp : Application() {
         database = AppDatabase.getInstance(this)
         repository = AppRepository(database)
         
-        // 检查并初始化默认模型
-        initializeDefaultModel()
+        // 检查是否需要提醒用户添加模型
+        checkNeedAddModelReminder()
     }
     
-    private fun initializeDefaultModel() {
+    private fun checkNeedAddModelReminder() {
         CoroutineScope(Dispatchers.IO).launch {
             repository.refreshData()
             val models = database.getAllModels()
             
-            if (models.isEmpty()) {
-                // 从 key.xml 读取默认配置
-                val modelName = getString(R.string.llm_model)
-                val baseUrl = getString(R.string.llm_base_url)
-                val apiKey = getString(R.string.llm_api_key)
-                
-                if (modelName.isNotEmpty() && apiKey.isNotEmpty()) {
-                    val defaultModel = ModelConfig(
-                        modelName = modelName,
-                        apiKey = apiKey,
-                        isActive = true,
-                        baseUrl = baseUrl,
-                        createdAt = System.currentTimeMillis()
-                    )
-                    repository.insertModel(defaultModel)
-                }
-            }
+            // 如果数据库为空，设置标志位提醒用户添加
+            needAddModelReminder = models.isEmpty()
         }
     }
+    
+    // 重置提醒标志
+    fun resetAddModelReminder() {
+        needAddModelReminder = false
+    }
 }
-

@@ -2,18 +2,13 @@ package com.zyy.smartfloat
 
 import android.Manifest
 import android.accessibilityservice.AccessibilityServiceInfo
-import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
-import android.content.IntentFilter
 import android.content.pm.PackageManager
-import android.content.ClipboardManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
-import android.util.Log
-import android.view.accessibility.AccessibilityManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
@@ -22,7 +17,6 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -31,7 +25,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.AlertDialog
@@ -47,7 +40,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -60,221 +52,72 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
-import androidx.core.content.ContextCompat.getSystemService
-import androidx.lifecycle.lifecycleScope
-import androidx.localbroadcastmanager.content.LocalBroadcastManager
-import com.google.gson.Gson
-import com.zyy.smartfloat.database.AddModel
-import com.zyy.smartfloat.database.ModelConfig
-import kotlinx.coroutines.launch
-
+import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.zyy.smartfloat.database.InstructionRecord
+import com.zyy.smartfloat.service.FloatingWindowService
+import com.zyy.smartfloat.utils.VoiceRecognizer
+import com.zyy.smartfloat.viewModel.MainViewModel
 
 class MainActivity : ComponentActivity() {
 
-    private val llmResult = mutableStateListOf<String>()
-    private val currentInstruction = mutableStateOf("")
-    private val instructionRecords = mutableStateListOf<InstructionRecord>()
-    private val imageRecognitionResult = mutableStateOf("")
-    private val llmQuestion = mutableStateOf("点击返回按钮")
-    private var clipboardDialogText by mutableStateOf("")
-
-    private val receiver = object : BroadcastReceiver() {
-        override fun onReceive(context: Context?, intent: Intent?) {
-            when (intent?.action) {
-                FloatingWindowService.ACTION_LLM_RESULT -> {
-                    val result = intent.getStringExtra(FloatingWindowService.EXTRA_LLM_RESULT) ?: ""
-                    if (result.isNotEmpty()) {
-                        synchronized(this@MainActivity) {
-                            llmResult.add(result)
-                            if (llmResult.size == 1 && currentInstruction.value.isNotEmpty()) {
-                                instructionRecords.add(0, InstructionRecord(currentInstruction.value, result))
-                            } else if (llmResult.size > 1 && instructionRecords.isNotEmpty()) {
-                                val updatedRecord = instructionRecords[0].copy(remark = llmResult.joinToString("\n"))
-                                instructionRecords[0] = updatedRecord
-                            }
-                        }
-                    }
-                }
-                FloatingWindowService.ACTION_TASK_START -> {
-                    llmResult.clear()
-                    imageRecognitionResult.value = ""
-                }
-                FloatingWindowService.ACTION_VOICE_RECOGNITION -> {
-                    val text = intent.getStringExtra(FloatingWindowService.EXTRA_VOICE_TEXT) ?: ""
-                    if (text.isNotEmpty()) {
-                        llmQuestion.value = text
-                        currentInstruction.value = text
-                    }
-                }
-                FloatingWindowService.ACTION_IMAGE_RECOGNITION -> {
-                    val text = intent.getStringExtra(FloatingWindowService.EXTRA_IMAGE_TEXT) ?: ""
-                    if (text.isNotEmpty()) {
-                        imageRecognitionResult.value = text
-                    }
-                }
-            }
-        }
-    }
+    private lateinit var viewModel: MainViewModel
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        
-        LocalBroadcastManager.getInstance(this).registerReceiver(
-            receiver,
-            IntentFilter().apply {
-                addAction(FloatingWindowService.ACTION_LLM_RESULT)
-                addAction(FloatingWindowService.ACTION_TASK_START)
-                addAction(FloatingWindowService.ACTION_VOICE_RECOGNITION)
-                addAction(FloatingWindowService.ACTION_IMAGE_RECOGNITION)
-            }
-        )
+
+        viewModel = ViewModelProvider(this)[MainViewModel::class.java]
+        viewModel.init(this)
+
         setContent {
-            if (clipboardDialogText.isNotEmpty()) {
-                // 提前解析判断是否为有效的模型格式
-                val gson = Gson()
-                val isValidModel = runCatching {
-                    gson.fromJson(clipboardDialogText, AddModel::class.java)
-                }.isSuccess
+            val showAddModelReminder by viewModel.showAddModelReminder.collectAsStateWithLifecycle()
+            val llmResult by viewModel.llmResult.collectAsStateWithLifecycle()
+            val instructionRecords by viewModel.instructionRecords.collectAsStateWithLifecycle()
+            val imageRecognitionResult by viewModel.imageRecognitionResult.collectAsStateWithLifecycle()
+            val llmQuestion by viewModel.llmQuestion.collectAsStateWithLifecycle()
 
-                // 在AlertDialog级别创建可编辑状态，确保重组时状态保持不变
-                val addModel = if (isValidModel) {
-                    gson.fromJson(clipboardDialogText, AddModel::class.java)
-                } else {
-                    null
-                }
-
-                var editedModelName by remember { mutableStateOf(addModel?.modelName ?: "") }
-                var editedBaseUrl by remember { mutableStateOf(addModel?.baseUrl ?: "") }
-                var editedApiKey by remember { mutableStateOf(addModel?.apiKey ?: "") }
-
+            if (showAddModelReminder) {
                 AlertDialog(
-                    onDismissRequest = { },
-                    title = { Text("剪贴板内容") },
-                    text = {
-                        if (isValidModel){
-                            clipboardAddModel(
-                                modelName = editedModelName,
-                                baseUrl = editedBaseUrl,
-                                apiKey = editedApiKey,
-                                onModelNameChange = { editedModelName = it },
-                                onBaseUrlChange = { editedBaseUrl = it },
-                                onApiKeyChange = { editedApiKey = it }
-                            )
-                        }else{
-                            Text("无法识别模型格式")
-                        }
-                    },
+                    onDismissRequest = { viewModel.dismissAddModelReminder() },
+                    title = { Text("提示") },
+                    text = { Text("当前没有配置任何模型，请先添加模型配置") },
                     confirmButton = {
                         Button(
                             onClick = {
-                                // 使用编辑后的值添加模型到数据库
-                                this.lifecycleScope.launch {
-                                    MyApp.repository.insertModel(
-                                        ModelConfig(
-                                            id = 0,
-                                            modelName = editedModelName,
-                                            apiKey = editedApiKey,
-                                            baseUrl = editedBaseUrl,
-                                            isActive = false,
-                                            createdAt = System.currentTimeMillis()
-                                        )
-                                    )
-                                }
-                                clipboardDialogText = ""
-                            },
-                            enabled = isValidModel
+                                viewModel.dismissAddModelReminder()
+                                val intent = Intent(this@MainActivity, ModelManagerActivity::class.java)
+                                startActivity(intent)
+                            }
                         ) {
-                            Text("添加")
+                            Text("去添加")
                         }
                     },
                     dismissButton = {
                         Button(onClick = {
-                            clipboardDialogText = ""
+                            viewModel.dismissAddModelReminder()
                         }) {
-                            Text("取消")
+                            Text("稍后")
                         }
                     }
                 )
             }
-            
+
             Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
                 FloatingButtonScreen(
                     modifier = Modifier.padding(innerPadding),
-                    llmResult = llmResult.toList(),
+                    llmResult = llmResult,
                     instructionRecords = instructionRecords,
-                    imageRecognitionResult = imageRecognitionResult.value,
-                    llmQuestion = llmQuestion.value,
+                    imageRecognitionResult = imageRecognitionResult,
+                    llmQuestion = llmQuestion,
                     onStartFloating = { instruction ->
-                        currentInstruction.value = instruction
-                    },
-                    onShow = {
-                        clipboardDialogText = getClipboardContent(this)
+                        viewModel.setCurrentInstruction(instruction)
                     }
                 )
             }
         }
     }
-
-    override fun onDestroy() {
-        LocalBroadcastManager.getInstance(this).unregisterReceiver(receiver)
-        super.onDestroy()
-    }
-
-    suspend fun addModelFormDialog(addModel: AddModel){
-        MyApp.repository.insertModel(
-            ModelConfig(
-                id = 0,
-                modelName = addModel.modelName,
-                apiKey = addModel.apiKey,
-                baseUrl = addModel.baseUrl,
-                isActive = false,
-                createdAt = System.currentTimeMillis()
-            )
-        )
-    }
 }
-
-@Composable
-fun clipboardAddModel(
-    modelName: String,
-    baseUrl: String,
-    apiKey: String,
-    onModelNameChange: (String) -> Unit,
-    onBaseUrlChange: (String) -> Unit,
-    onApiKeyChange: (String) -> Unit
-) {
-    Column(
-        modifier = Modifier.padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
-        // 模型名称输入框
-        OutlinedTextField(
-            value = modelName,
-            onValueChange = onModelNameChange,
-            label = { Text("模型名称") },
-            modifier = Modifier.fillMaxWidth()
-        )
-
-        // Base URL 输入框
-        OutlinedTextField(
-            value = baseUrl,
-            onValueChange = onBaseUrlChange,
-            label = { Text("Complete URL") },
-            modifier = Modifier.fillMaxWidth()
-        )
-
-        // API Key 输入框
-        OutlinedTextField(
-            value = apiKey,
-            onValueChange = onApiKeyChange,
-            label = { Text("API Key") },
-            modifier = Modifier.fillMaxWidth(),
-            visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation()
-        )
-    }
-}
-
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -284,8 +127,7 @@ fun FloatingButtonScreen(
     instructionRecords: List<InstructionRecord> = emptyList(),
     imageRecognitionResult: String = "",
     llmQuestion: String = "点击返回按钮",
-    onStartFloating: (String) -> Unit = {},
-    onShow: () -> Unit = {}
+    onStartFloating: (String) -> Unit = {}
 ) {
     val context = LocalContext.current
     val activity = context as? android.app.Activity
@@ -329,9 +171,6 @@ fun FloatingButtonScreen(
             audioPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
         }
     }
-
-
-
 
     val notificationPermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission()
@@ -540,11 +379,11 @@ fun FloatingButtonScreen(
                 }
             }
         }
-        
+
         item {
             Spacer(modifier = Modifier.height(16.dp))
         }
-        
+
         item {
             Row(
                 modifier = Modifier
@@ -570,25 +409,17 @@ fun FloatingButtonScreen(
                 ) {
                     Text("模型管理")
                 }
-
-                Button(
-                    onClick = {
-                        onShow()
-                    },
-                    modifier = Modifier.weight(1f)
-                ) {
-                    Text("剪切板")
-                }
             }
         }
-        
+
         item {
             Spacer(modifier = Modifier.height(32.dp))
         }
     }
 }
+
 private fun isAccessibilityServiceEnabled(context: Context): Boolean {
-    val am = context.getSystemService(Context.ACCESSIBILITY_SERVICE) as AccessibilityManager
+    val am = context.getSystemService(Context.ACCESSIBILITY_SERVICE) as android.view.accessibility.AccessibilityManager
     val enabledServices = am.getEnabledAccessibilityServiceList(
         AccessibilityServiceInfo.FEEDBACK_ALL_MASK
     )
@@ -623,18 +454,4 @@ private fun requestOverlayPermission(
     )
     intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
     launcher.launch(intent)
-}
-
-private fun getClipboardContent(context: Context): String {
-    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-    val clipData = clipboard.primaryClip
-
-    if (clipData != null && clipData.itemCount > 0) {
-        val item = clipData.getItemAt(0)
-        Log.d("MainActivity getClipboardContent",item.toString())
-        return item.text?.toString() ?: ""
-    }else{
-        Log.d("MainActivity getClipboardContent","null")
-    }
-    return ""
 }

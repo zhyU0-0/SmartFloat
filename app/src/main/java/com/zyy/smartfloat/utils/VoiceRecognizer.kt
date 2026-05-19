@@ -1,4 +1,4 @@
-package com.zyy.smartfloat
+package com.zyy.smartfloat.utils
 
 import android.Manifest
 import android.content.Context
@@ -6,6 +6,9 @@ import android.os.Handler
 import android.os.Looper
 import android.util.Log
 import androidx.annotation.RequiresPermission
+import com.zyy.smartfloat.utils.AudioRecorder
+import com.zyy.smartfloat.viewModel.QCloudAsrApi
+import com.zyy.smartfloat.R
 
 class VoiceRecognizer(
     private val context: Context
@@ -29,15 +32,15 @@ class VoiceRecognizer(
     @RequiresPermission(Manifest.permission.RECORD_AUDIO)
     fun startRecording(): Boolean {
         Log.d(TAG, "startRecording: 开始初始化语音识别")
-        
+
         if (audioRecorder != null) {
             Log.w(TAG, "已有录音器实例，先释放")
             audioRecorder?.release()
         }
-        
+
         audioRecorder = AudioRecorder(context)
         asrApi = QCloudAsrApi(appId, secretId, secretKey)
-        
+
         audioRecorder?.setCallbacks(
             onStart = {
                 Log.d(TAG, "didStartRecord: 开始录音")
@@ -53,13 +56,13 @@ class VoiceRecognizer(
                 mainHandler.post { onErrorCallback?.invoke(error) }
             }
         )
-        
+
         return audioRecorder?.startRecording() ?: false
     }
 
     private fun recognizeAudio(filePath: String) {
         Log.d(TAG, "recognizeAudio: 开始识别, 文件: $filePath")
-        
+
         asrApi?.recognizeAudio(filePath) { result, error ->
             if (result != null) {
                 Log.d(TAG, "recognizeAudio: 识别成功, result=$result")

@@ -39,7 +39,7 @@
             android:name=".ModelManagerActivity"
             android:exported="false" />
         <service
-            android:name=".FloatingWindowService"
+            android:name=".service.FloatingWindowService"
             android:exported="false"
             android:foregroundServiceType="specialUse">
             <property
@@ -47,7 +47,7 @@
                 android:value="悬浮窗显示服务" />
         </service>
         <service
-            android:name=".TapAccessibilityService"
+            android:name=".service.TapAccessibilityService"
             android:exported="true"
             android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
             <intent-filter>

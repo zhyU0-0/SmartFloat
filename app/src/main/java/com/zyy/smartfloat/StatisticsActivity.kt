@@ -1,7 +1,6 @@
 package com.zyy.smartfloat
 
 import android.os.Bundle
-import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -11,9 +10,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
-import androidx.lifecycle.ViewModel
-import androidx.lifecycle.viewModelScope
-import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -22,13 +18,15 @@ import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.viewmodel.compose.viewModel
 import com.zyy.smartfloat.database.Conversation
 import com.zyy.smartfloat.database.DailyTokenUsage
 import com.zyy.smartfloat.ui.theme.SmartFloatTheme
+import com.zyy.smartfloat.viewmodel.StatisticsViewModel
 import kotlinx.coroutines.launch
-
 import java.text.SimpleDateFormat
 import java.util.*
+import androidx.compose.runtime.collectAsState
 
 class StatisticsActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -65,7 +63,6 @@ fun StatisticsScreen(
             modifier = Modifier.padding(bottom = 16.dp)
         )
 
-        // 总 Token 使用量卡片
         Card(
             modifier = Modifier
                 .fillMaxWidth()
@@ -83,7 +80,7 @@ fun StatisticsScreen(
                     fontWeight = FontWeight.Medium
                 )
                 Text(
-                    text = "${viewModel.totalTokenUsed}",
+                    text = "${viewModel.totalTokenUsed.collectAsState().value}",
                     fontSize = 32.sp,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.primary
@@ -91,7 +88,6 @@ fun StatisticsScreen(
             }
         }
 
-        // 每日 Token 使用条形图
         Card(
             modifier = Modifier
                 .fillMaxWidth()
@@ -108,9 +104,9 @@ fun StatisticsScreen(
                     modifier = Modifier.padding(bottom = 8.dp)
                 )
 
-                if (viewModel.dailyTokenUsage.isNotEmpty()) {
+                if (viewModel.dailyTokenUsage.collectAsState().value.isNotEmpty()) {
                     TokenUsageBarChart(
-                        dailyUsage = viewModel.dailyTokenUsage.reversed(),
+                        dailyUsage = viewModel.dailyTokenUsage.collectAsState().value.reversed(),
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(300.dp)
@@ -128,7 +124,6 @@ fun StatisticsScreen(
             }
         }
 
-        // 对话历史列表
         Text(
             text = "对话历史",
             fontSize = 18.sp,
@@ -140,49 +135,9 @@ fun StatisticsScreen(
             modifier = Modifier.weight(1f),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            items(viewModel.allConversations) { conversation ->
+            items(viewModel.allConversations.value) { conversation ->
                 ConversationItem(conversation = conversation)
             }
-        }
-    }
-}
-
-class StatisticsViewModel : ViewModel() {
-    private val repository = MyApp.repository
-
-    var allConversations by mutableStateOf<List<Conversation>>(emptyList())
-        private set
-
-    var dailyTokenUsage by mutableStateOf<List<DailyTokenUsage>>(emptyList())
-        private set
-
-    var totalTokenUsed by mutableStateOf(0)
-        private set
-
-    init {
-        viewModelScope.launch {
-            repository.allConversations.collect { list ->
-                allConversations = list
-            }
-        }
-        
-        viewModelScope.launch {
-            repository.dailyTokenUsage.collect { list ->
-                dailyTokenUsage = list
-            }
-        }
-        
-        viewModelScope.launch {
-            repository.totalTokenUsed.collect { total ->
-                Log.d("total1", total.toString())
-                totalTokenUsed = total
-            }
-        }
-    }
-
-    fun loadData() {
-        viewModelScope.launch {
-            repository.refreshData()
         }
     }
 }
@@ -208,15 +163,12 @@ fun TokenUsageBarChart(
             val left = 16.dp.toPx() + index * (barWidth + barSpacing)
             val top = canvasHeight - 40.dp.toPx() - barHeight
 
-
-            // 绘制条形
             drawRect(
                 color = Color(0xFF4CAF50),
                 topLeft = Offset(left, top),
                 size = androidx.compose.ui.geometry.Size(barWidth - barSpacing, barHeight),
             )
 
-            // 绘制日期标签
             val textPaint = android.graphics.Paint().apply {
                 color = android.graphics.Color.BLACK
                 textSize = 24f
@@ -231,7 +183,7 @@ fun TokenUsageBarChart(
             drawContext.canvas.nativeCanvas.drawText(
                 usage.totalToken.toString(),
                 left + (barWidth - barSpacing) / 2,
-                canvasHeight-barHeight - 50.dp.toPx(),
+                canvasHeight - barHeight - 50.dp.toPx(),
                 textPaint
             )
         }
@@ -240,7 +192,7 @@ fun TokenUsageBarChart(
 
 @Composable
 fun ConversationItem(conversation: Conversation) {
-    val dateFormat = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault())
+    val dateFormat = SimpleDateFormat("yyyy-MM-dd HH:mm:ss")
 
     Card(
         modifier = Modifier.fillMaxWidth()

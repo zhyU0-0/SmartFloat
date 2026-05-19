@@ -1,4 +1,4 @@
-package com.zyy.smartfloat
+package com.zyy.smartfloat.service
 
 import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.GestureDescription

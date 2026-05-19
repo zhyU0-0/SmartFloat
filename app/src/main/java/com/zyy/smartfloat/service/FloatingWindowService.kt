@@ -1,13 +1,16 @@
-package com.zyy.smartfloat
+package com.zyy.smartfloat.service
 
+import android.Manifest
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
+import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
@@ -17,16 +20,17 @@ import android.os.Build
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
+import android.util.DisplayMetrics
 import android.util.Log
 import android.view.Gravity
 import android.view.LayoutInflater
 import android.view.MotionEvent
 import android.view.View
 import android.view.WindowManager
+import android.view.accessibility.AccessibilityNodeInfo
+import android.view.inputmethod.InputMethodManager
 import android.widget.EditText
 import android.widget.ImageView
-import android.widget.LinearLayout
-import android.widget.TextView
 import android.widget.Toast
 import androidx.annotation.RequiresApi
 import androidx.cardview.widget.CardView
@@ -34,11 +38,17 @@ import androidx.core.app.ActivityCompat
 import androidx.core.app.NotificationCompat
 import androidx.localbroadcastmanager.content.LocalBroadcastManager
 import com.google.gson.Gson
+import com.google.mlkit.common.MlKitException
 import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.text.Text
 import com.google.mlkit.vision.text.TextRecognition
 import com.google.mlkit.vision.text.chinese.ChineseTextRecognizerOptions
 import com.google.mlkit.vision.text.latin.TextRecognizerOptions
+import com.zyy.smartfloat.MainActivity
+import com.zyy.smartfloat.MyApp
+import com.zyy.smartfloat.R
+import com.zyy.smartfloat.service.TapAccessibilityService
+import com.zyy.smartfloat.utils.VoiceRecognizer
 import com.zyy.smartfloat.network.ImageUrl
 import com.zyy.smartfloat.network.LlmContent
 import com.zyy.smartfloat.network.LlmMessage
@@ -49,6 +59,7 @@ import com.zyy.smartfloat.prompt.LLmResponse
 import com.zyy.smartfloat.prompt.ProcessHistory
 import com.zyy.smartfloat.prompt.TapPoints
 import com.zyy.smartfloat.prompt.buildLlmPrompt
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -64,7 +75,7 @@ import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.FileOutputStream
-import kotlin.coroutines.resumeWithException
+import java.util.concurrent.atomic.AtomicLong
 
 class FloatingWindowService : Service() {
 
@@ -94,7 +105,7 @@ class FloatingWindowService : Service() {
     private var isEditing = false
     private var recognizedText: String = ""
     private var isProcessing = false
-    private val currentTaskId = java.util.concurrent.atomic.AtomicLong(0)
+    private val currentTaskId = AtomicLong(0)
     private var lastTapPoints = mutableListOf<TapPoints>()
     private var redButton: CardView? = null
     private var floatLayoutParams: WindowManager.LayoutParams? = null
@@ -133,7 +144,7 @@ class FloatingWindowService : Service() {
         val wm = getSystemService(WINDOW_SERVICE) as WindowManager
         @Suppress("DEPRECATION")
         val display = wm.defaultDisplay
-        val metrics = android.util.DisplayMetrics()
+        val metrics = DisplayMetrics()
         @Suppress("DEPRECATION")
         display.getRealMetrics(metrics)
         screenWidth = metrics.widthPixels
@@ -257,18 +268,18 @@ class FloatingWindowService : Service() {
                 isEditing = !isEditing
                 if (isEditing) {
                     // 进入编辑模式
-                    floatingText?.visibility = android.view.View.VISIBLE
-                    floatingIcon?.visibility = android.view.View.GONE
+                    floatingText?.visibility = View.VISIBLE
+                    floatingIcon?.visibility = View.GONE
                     floatingText?.requestFocus()
                     // 显示软键盘
-                    val imm = getSystemService(INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager
-                    imm.showSoftInput(floatingText, android.view.inputmethod.InputMethodManager.SHOW_IMPLICIT)
+                    val imm = getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager
+                    imm.showSoftInput(floatingText, InputMethodManager.SHOW_IMPLICIT)
                     editButton?.setImageResource(R.drawable.ic_complete)
                 } else {
                     // 退出编辑模式
                     floatingText?.clearFocus()
                     recognizedText = floatingText?.text?.toString() ?: ""
-                    val imm = getSystemService(INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager
+                    val imm = getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager
                     imm.hideSoftInputFromWindow(floatingText?.windowToken, 0)
                     updateFloatingText()
                     editButton?.setImageResource(R.drawable.ic_edit)
@@ -283,7 +294,7 @@ class FloatingWindowService : Service() {
                 isEditing = false
                 floatingText?.clearFocus()
                 // 隐藏软键盘
-                val imm = getSystemService(INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager
+                val imm = getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager
                 imm.hideSoftInputFromWindow(floatingText?.windowToken, 0)
                 // 更新UI回到原始状态
                 updateFloatingText()
@@ -295,9 +306,9 @@ class FloatingWindowService : Service() {
                     // 取消焦点和编辑模式
                     floatingText?.clearFocus()
                     isEditing = false
-                    val imm = getSystemService(INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager
+                    val imm = getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager
                     imm.hideSoftInputFromWindow(floatingText?.windowToken, 0)
-                    
+
                     Toast.makeText(this@FloatingWindowService, "截图上传中...", Toast.LENGTH_SHORT).show()
                     captureAndUpload()
                 }
@@ -359,7 +370,7 @@ class FloatingWindowService : Service() {
     }
 
     private fun startRecording() {
-        if (ActivityCompat.checkSelfPermission(this, android.Manifest.permission.RECORD_AUDIO)
+        if (ActivityCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO)
             != PackageManager.PERMISSION_GRANTED) {
             Log.e(TAG, "录音权限未授予")
             return
@@ -464,11 +475,15 @@ class FloatingWindowService : Service() {
                     Log.d(TAG, "Task #$taskId cancelled before start")
                     return@launch
                 }
-                val a11yService = TapAccessibilityService.instance
+                val a11yService = TapAccessibilityService.Companion.instance
                 if (a11yService == null) {
                     Log.e(TAG, "TapAccessibilityService instance is null")
                     withContext(Dispatchers.Main) {
-                        Toast.makeText(this@FloatingWindowService, "无障碍服务未连接", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(
+                            this@FloatingWindowService,
+                            "无障碍服务未连接",
+                            Toast.LENGTH_SHORT
+                        ).show()
                     }
                     return@launch
                 }
@@ -476,7 +491,11 @@ class FloatingWindowService : Service() {
                 if (Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
                     Log.e(TAG, "takeScreenshot requires API 34+")
                     withContext(Dispatchers.Main) {
-                        Toast.makeText(this@FloatingWindowService, "当前系统不支持无障碍截图(需Android 14+)", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(
+                            this@FloatingWindowService,
+                            "当前系统不支持无障碍截图(需Android 14+)",
+                            Toast.LENGTH_SHORT
+                        ).show()
                     }
                     return@launch
                 }
@@ -515,7 +534,11 @@ class FloatingWindowService : Service() {
                     Log.d(TAG, "upload success, url: $imageUrl")
 
                     withContext(Dispatchers.Main) {
-                        Toast.makeText(this@FloatingWindowService, "上传成功: $imageUrl", Toast.LENGTH_LONG).show()
+                        Toast.makeText(
+                            this@FloatingWindowService,
+                            "上传成功: $imageUrl",
+                            Toast.LENGTH_LONG
+                        ).show()
                     }
                 }
 
@@ -529,7 +552,11 @@ class FloatingWindowService : Service() {
             } catch (e: Exception) {
                 Log.e(TAG, "captureAndUpload failed: ${e.message}", e)
                 withContext(Dispatchers.Main) {
-                    Toast.makeText(this@FloatingWindowService, "截图上传失败: ${e.message}", Toast.LENGTH_LONG).show()
+                    Toast.makeText(
+                        this@FloatingWindowService,
+                        "截图上传失败: ${e.message}",
+                        Toast.LENGTH_LONG
+                    ).show()
                 }
                 isProcessing = false
             }
@@ -537,7 +564,7 @@ class FloatingWindowService : Service() {
     }
 
     fun getAllClickableNodes() {
-        val a11yService = TapAccessibilityService.instance
+        val a11yService = TapAccessibilityService.Companion.instance
         if (a11yService == null) {
             Log.e(TAG, "getAllClickableNodes: Accessibility service not available")
             showToastOnMainThread("无障碍服务未开启")
@@ -581,16 +608,16 @@ class FloatingWindowService : Service() {
         val text: CharSequence?,
         val contentDescription: CharSequence?,
         val className: CharSequence?,
-        val bounds: android.graphics.Rect,
+        val bounds: Rect,
         val centerX: Float,
         val centerY: Float
     )
 
-    private fun collectClickableNodes(node: android.view.accessibility.AccessibilityNodeInfo, result: MutableList<NodeInfo>) {
+    private fun collectClickableNodes(node: AccessibilityNodeInfo, result: MutableList<NodeInfo>) {
         try {
             // 检查节点是否可点击
             if (node.isClickable || node.isFocusable || node.isLongClickable) {
-                val bounds = android.graphics.Rect()
+                val bounds = Rect()
                 node.getBoundsInScreen(bounds)
 
                 // 过滤过小的节点（可能是图标）
@@ -663,17 +690,17 @@ class FloatingWindowService : Service() {
                 val gson = Gson()
                 val json = gson.toJson(lLmResponseExample)
                 val llmPrompt = buildLlmPrompt(this@FloatingWindowService, json)
-                val llmBody = LLmBody(llmPrompt, question, screenWidth, screenHeight, history,"")
+                val llmBody = LLmBody(llmPrompt, question, screenWidth, screenHeight, history, "")
 
                 try {
                     val startTime = System.currentTimeMillis()
                     // 从数据库获取活跃模型配置
-                    val activeModel = MyApp.repository.getActiveModelSync()
+                    val activeModel = MyApp.Companion.repository.getActiveModelSync()
                     val apiKey = activeModel?.apiKey ?: getString(R.string.llm_api_key)
                     val model = activeModel?.modelName ?: getString(R.string.llm_model)
                     val modelId = activeModel?.id ?: 0L
                     val baseUrl = activeModel?.baseUrl ?: getString(R.string.llm_base_url)
-                    var request:LlmRequest;
+                    var request: LlmRequest;
                     if(isImage && currentImageUrl != null){
                         request = LlmRequest(
                             model = model,
@@ -730,7 +757,7 @@ class FloatingWindowService : Service() {
                     // 记录对话到数据库
                     serviceScope.launch {
                         try {
-                            MyApp.repository.insertConversation(
+                            MyApp.Companion.repository.insertConversation(
                                 remark = llmResponse?.remark ?: answer,
                                 inputToken = inputToken,
                                 outputToken = outputToken,
@@ -747,7 +774,7 @@ class FloatingWindowService : Service() {
                             Log.d(TAG, "执行点击: x=${tapPoint.tapX}, y=${tapPoint.tapY}, delay=${tapPoint.delay}")
                             // 将点击坐标添加到列表中
                             lastTapPoints.add(tapPoint)
-                            TapAccessibilityService.instance?.simulateTap(
+                            TapAccessibilityService.Companion.instance?.simulateTap(
                                 tapPoint.tapX.toFloat(),
                                 tapPoint.tapY.toFloat(),
                                 tapPoint.delay.toLong(),
@@ -755,7 +782,11 @@ class FloatingWindowService : Service() {
                             )
                         }
                         withContext(Dispatchers.Main) {
-                            Toast.makeText(this@FloatingWindowService, "LLM: ${llmResponse?.remark ?: answer}", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(
+                                this@FloatingWindowService,
+                                "LLM: ${llmResponse?.remark ?: answer}",
+                                Toast.LENGTH_SHORT
+                            ).show()
                         }
                         sendLlmResultToActivity(llmResponse.remark ?: answer)
                         if (llmResponse?.isEnd == true) {
@@ -768,7 +799,7 @@ class FloatingWindowService : Service() {
                         }
 
                         llmResponse?.remark?.let {
-                            history.add(ProcessHistory(it,llmResponse.tapPoints))
+                            history.add(ProcessHistory(it, llmResponse.tapPoints))
                         }
 
                         if (loopCount < maxLoops) {
@@ -778,7 +809,7 @@ class FloatingWindowService : Service() {
                             }
                             delay(100)
 
-                            val bitmap = TapAccessibilityService.instance?.captureScreenshot()
+                            val bitmap = TapAccessibilityService.Companion.instance?.captureScreenshot()
 
                             if(isImage){
                                 withContext(Dispatchers.Main) {
@@ -802,13 +833,17 @@ class FloatingWindowService : Service() {
 
                         }
                     }
-                } catch (e: kotlinx.coroutines.CancellationException) {
+                } catch (e: CancellationException) {
                     Log.d(TAG, "sendToLlm task #$taskId cancelled")
                     break
                 } catch (e: Exception) {
                     Log.e(TAG, "sendToLlm第${loopCount}轮失败: ${e.message}", e)
                     withContext(Dispatchers.Main) {
-                        Toast.makeText(this@FloatingWindowService, "LLM请求失败: ${e.message}", Toast.LENGTH_LONG).show()
+                        Toast.makeText(
+                            this@FloatingWindowService,
+                            "LLM请求失败: ${e.message}",
+                            Toast.LENGTH_LONG
+                        ).show()
                     }
                     break
                 }
@@ -854,7 +889,8 @@ class FloatingWindowService : Service() {
                 val image = InputImage.fromBitmap(bitmap, 0)
                 // 第一次：英文识别器
                 Log.d(TAG, "使用英文识别器识别")
-                val latinRecognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
+                val latinRecognizer =
+                    TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
                 val latinResult = suspendCancellableCoroutine<Text?> { continuation ->
                     latinRecognizer.process(image)
                         .addOnSuccessListener { continuation.resume(it) {} }
@@ -901,7 +937,7 @@ class FloatingWindowService : Service() {
                 } else {
                     val stringBuilder = StringBuilder()
                     stringBuilder.append("识别到 ${allBlocks.size} 个文本块:\n")
-                    
+
                     for ((index, pair) in allBlocks.withIndex()) {
                         val block = pair.first
                         val source = pair.second
@@ -911,29 +947,30 @@ class FloatingWindowService : Service() {
                             stringBuilder.append("坐标: (${blockRect.centerX()}, ${blockRect.centerY()})\n")
                             //stringBuilder.append("  边界: 左=${blockRect.left}, 上=${blockRect.top}, 右=${blockRect.right}, 下=${blockRect.bottom}\n")
                         }
-                        
- /*                       // 输出每行信息
-                        for (line in block.lines) {
-                            val lineRect = line.boundingBox
-                            stringBuilder.append("    行: \"${line.text}\"\n")
-                            if (lineRect != null) {
-                                stringBuilder.append("      中心: (${lineRect.centerX()}, ${lineRect.centerY()})\n")
-                            }
-                        }*/
+
+                        /*                       // 输出每行信息
+                                               for (line in block.lines) {
+                                                   val lineRect = line.boundingBox
+                                                   stringBuilder.append("    行: \"${line.text}\"\n")
+                                                   if (lineRect != null) {
+                                                       stringBuilder.append("      中心: (${lineRect.centerX()}, ${lineRect.centerY()})\n")
+                                                   }
+                                               }*/
                     }
-                    
+
                     stringBuilder.toString()
                 }
 
             } catch (e: Exception) {
                 Log.e(TAG, "识别异常: ${e.message}", e)
                 when (e) {
-                    is com.google.mlkit.common.MlKitException -> {
+                    is MlKitException -> {
                         when (e.errorCode) {
-                            com.google.mlkit.common.MlKitException.NOT_FOUND -> "模型未下载完成"
+                            MlKitException.NOT_FOUND -> "模型未下载完成"
                             else -> "ML Kit错误: ${e.message}"
                         }
                     }
+
                     else -> "识别失败: ${e.message}"
                 }
             }
@@ -956,7 +993,7 @@ class FloatingWindowService : Service() {
         val baos = ByteArrayOutputStream()
         bitmap.compress(Bitmap.CompressFormat.JPEG, quality, baos)
         val bais = ByteArrayInputStream(baos.toByteArray())
-        return android.graphics.BitmapFactory.decodeStream(bais)!!
+        return BitmapFactory.decodeStream(bais)!!
     }
 
     private fun addGridAndCoordinates(bitmap: Bitmap, origWidth: Int, origHeight: Int, tapPoints: List<TapPoints> = emptyList()): Bitmap {
@@ -964,7 +1001,7 @@ class FloatingWindowService : Service() {
         val height = bitmap.height
         val scaleX = width.toFloat() / origWidth
         val scaleY = height.toFloat() / origHeight
-        
+
         val mutableBitmap = bitmap.copy(Bitmap.Config.ARGB_8888, true)
         val canvas = Canvas(mutableBitmap)
         val paint = Paint().apply {
@@ -1017,12 +1054,12 @@ class FloatingWindowService : Service() {
         tapPoints.forEachIndexed { index, tapPoint ->
             val tapPx = tapPoint.tapX.toFloat() * scaleX
             val tapPy = tapPoint.tapY.toFloat() * scaleY
-            
+
             // 绘制点击点（红色半透明圆圈）
             paint.color = Color.parseColor("#88FF0000")
             paint.style = Paint.Style.FILL
             canvas.drawCircle(tapPx, tapPy, 15f, paint)
-            
+
             // 绘制点击序号
             paint.color = Color.WHITE
             paint.textSize = 16f

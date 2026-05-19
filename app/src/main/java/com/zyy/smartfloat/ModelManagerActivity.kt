@@ -1,6 +1,11 @@
 package com.zyy.smartfloat
 
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
 import android.os.Bundle
+import android.util.Log
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -12,16 +17,17 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.lifecycle.ViewModel
-import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.google.gson.Gson
+import com.zyy.smartfloat.database.AddModel
 import com.zyy.smartfloat.database.ModelConfig
 import com.zyy.smartfloat.ui.theme.SmartFloatTheme
-import kotlinx.coroutines.launch
-
+import com.zyy.smartfloat.viewmodel.ModelManagerViewModel
+import androidx.compose.runtime.collectAsState
 
 class ModelManagerActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -42,8 +48,6 @@ fun ModelManagerScreen(
     modifier: Modifier = Modifier,
     viewModel: ModelManagerViewModel = viewModel()
 ) {
-    val scope = rememberCoroutineScope()
-    
     LaunchedEffect(Unit) {
         viewModel.loadModels()
     }
@@ -53,6 +57,9 @@ fun ModelManagerScreen(
     var newModelName by remember { mutableStateOf("") }
     var newApiKey by remember { mutableStateOf("") }
     var newBaseUrl by remember { mutableStateOf("") }
+    var clipboardDialogText by remember { mutableStateOf("") }
+    val context = LocalContext.current
+    val gson = Gson()
 
     Column(
         modifier = modifier
@@ -69,14 +76,18 @@ fun ModelManagerScreen(
                 fontSize = 24.sp,
                 fontWeight = FontWeight.Bold
             )
-            Button(onClick = { showAddDialog = true }) {
+            Button(onClick = {
+                clipboardDialogText = viewModel.getClipboardContent(context)
+                Log.d("ModeActivity", clipboardDialogText)
+                showAddDialog = true
+            }) {
                 Text("添加模型")
             }
         }
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        if (viewModel.models.isEmpty()) {
+        if (viewModel.models.collectAsState().value.isEmpty()) {
             Box(
                 modifier = Modifier.fillMaxSize(),
                 contentAlignment = Alignment.Center
@@ -88,37 +99,74 @@ fun ModelManagerScreen(
                 modifier = Modifier.weight(1f),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                items(viewModel.models) { model ->
+                items(viewModel.models.value) { model ->
                     ModelCard(
-                            model = model,
-                            isActive = model.isActive,
-                            onSelect = {
-                                viewModel.setActiveModel(model.id)
-                            },
-                            onDelete = {
-                                viewModel.deleteModel(model)
-                            },
-                            onEdit = {
-                                // 点击编辑时填充数据到弹窗
-                                editingModelId = model.id
-                                newModelName = model.modelName
-                                newApiKey = model.apiKey
-                                newBaseUrl = model.baseUrl ?: ""
-                                showAddDialog = true
-                            }
-                        )
+                        model = model,
+                        isActive = model.isActive,
+                        onSelect = {
+                            viewModel.setActiveModel(model.id)
+                        },
+                        onDelete = {
+                            viewModel.deleteModel(model)
+                        },
+                        onEdit = {
+                            editingModelId = model.id
+                            newModelName = model.modelName
+                            newApiKey = model.apiKey
+                            newBaseUrl = model.baseUrl ?: ""
+                            showAddDialog = true
+                        }
+                    )
                 }
             }
         }
 
-        // 添加/编辑模型对话框
         if (showAddDialog) {
             AlertDialog(
-                onDismissRequest = { 
-                    showAddDialog = false 
+                onDismissRequest = {
+                    showAddDialog = false
                     editingModelId = null
                 },
-                title = { Text(if (editingModelId != null) "编辑模型" else "添加新模型") },
+                title = {
+                    Row {
+                        Text(if (editingModelId != null) "编辑模型" else "添加新模型")
+                        if (editingModelId == null) {
+                            Button(
+                                onClick = {
+                                    if (clipboardDialogText.isEmpty()) {
+                                        Toast.makeText(context, "剪切板无信息", Toast.LENGTH_SHORT).show()
+                                    } else {
+                                        val addModel = gson.fromJson(clipboardDialogText, AddModel::class.java)
+                                        if (addModel == null) {
+                                            Toast.makeText(context, "剪切板格式错误", Toast.LENGTH_SHORT).show()
+                                        } else {
+                                            newModelName = addModel.modelName
+                                            newBaseUrl = addModel.baseUrl
+                                            newApiKey = addModel.apiKey
+                                        }
+                                    }
+                                }
+                            ) {
+                                Text("剪切板")
+                            }
+                        } else {
+                            Row {
+                                Button(
+                                    onClick = {
+                                        val addModel = AddModel(
+                                            newModelName,
+                                            newApiKey,
+                                            newBaseUrl
+                                        )
+                                        viewModel.copyAddMode(context, addModel)
+                                    }
+                                ) {
+                                    Text("复制")
+                                }
+                            }
+                        }
+                    }
+                },
                 text = {
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         OutlinedTextField(
@@ -146,10 +194,8 @@ fun ModelManagerScreen(
                         onClick = {
                             if (newModelName.isNotEmpty() && newApiKey.isNotEmpty() && newBaseUrl.isNotEmpty()) {
                                 if (editingModelId != null) {
-                                    // 编辑模式：更新模型
                                     viewModel.updateModel(editingModelId!!, newModelName, newApiKey, newBaseUrl)
                                 } else {
-                                    // 添加模式：添加新模型
                                     viewModel.addModel(newModelName, newApiKey, newBaseUrl)
                                 }
                                 newModelName = ""
@@ -168,7 +214,7 @@ fun ModelManagerScreen(
                         newModelName = ""
                         newApiKey = ""
                         newBaseUrl = ""
-                        showAddDialog = false 
+                        showAddDialog = false
                         editingModelId = null
                     }) {
                         Text("取消")
@@ -194,7 +240,6 @@ fun ModelCard(
         } else {
             CardDefaults.cardColors()
         }
-        // 添加点击事件
     ) {
         Column(modifier = Modifier.padding(12.dp)) {
             Row(
@@ -239,62 +284,5 @@ fun ModelCard(
     }
 }
 
-class ModelManagerViewModel : ViewModel() {
-    private val repository = MyApp.repository
 
-    var models by mutableStateOf<List<ModelConfig>>(emptyList())
-        private set
 
-    init {
-        viewModelScope.launch {
-            repository.allModels.collect {
-                models = it
-            }
-        }
-    }
-
-    fun loadModels() {
-        viewModelScope.launch {
-            repository.refreshData()
-        }
-    }
-
-    fun addModel(modelName: String, apiKey: String, baseUrl: String) {
-        viewModelScope.launch {
-            val model = ModelConfig(
-                modelName = modelName,
-                apiKey = apiKey,
-                baseUrl = baseUrl,
-                isActive = models.isEmpty(),
-                createdAt = System.currentTimeMillis()
-            )
-            repository.insertModel(model)
-        }
-    }
-
-    fun setActiveModel(modelId: Long) {
-        viewModelScope.launch {
-            repository.setActiveModel(modelId)
-        }
-    }
-
-    fun deleteModel(model: ModelConfig) {
-        viewModelScope.launch {
-            repository.deleteModel(model)
-        }
-    }
-
-    fun updateModel(modelId: Long, modelName: String, apiKey: String, baseUrl: String) {
-        viewModelScope.launch {
-            val model = models.find { it.id == modelId }
-            if (model != null) {
-                val updatedModel = model.copy(
-                    modelName = modelName,
-                    apiKey = apiKey,
-                    baseUrl = baseUrl
-                )
-                repository.updateModel(updatedModel)
-            }
-        }
-    }
-}
