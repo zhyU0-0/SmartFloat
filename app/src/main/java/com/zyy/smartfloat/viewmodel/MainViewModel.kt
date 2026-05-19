@@ -1,4 +1,4 @@
-package com.zyy.smartfloat.viewModel
+package com.zyy.smartfloat.viewmodel
 
 import android.content.BroadcastReceiver
 import android.content.Context

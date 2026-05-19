@@ -32,7 +32,6 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -57,7 +56,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.zyy.smartfloat.database.InstructionRecord
 import com.zyy.smartfloat.service.FloatingWindowService
 import com.zyy.smartfloat.utils.VoiceRecognizer
-import com.zyy.smartfloat.viewModel.MainViewModel
+import com.zyy.smartfloat.viewmodel.MainViewModel
 
 class MainActivity : ComponentActivity() {
 
@@ -408,6 +407,15 @@ fun FloatingButtonScreen(
                     modifier = Modifier.weight(1f)
                 ) {
                     Text("模型管理")
+                }
+                Button(
+                    onClick = {
+                        val intent = Intent(context, SettingsActivity::class.java)
+                        context.startActivity(intent)
+                    },
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text("设置")
                 }
             }
         }

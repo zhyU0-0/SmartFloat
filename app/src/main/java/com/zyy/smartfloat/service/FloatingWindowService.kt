@@ -6,7 +6,6 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
-import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
@@ -47,9 +46,9 @@ import com.google.mlkit.vision.text.latin.TextRecognizerOptions
 import com.zyy.smartfloat.MainActivity
 import com.zyy.smartfloat.MyApp
 import com.zyy.smartfloat.R
-import com.zyy.smartfloat.service.TapAccessibilityService
 import com.zyy.smartfloat.utils.VoiceRecognizer
 import com.zyy.smartfloat.network.ImageUrl
+import com.zyy.smartfloat.network.LLmThinkingType
 import com.zyy.smartfloat.network.LlmContent
 import com.zyy.smartfloat.network.LlmMessage
 import com.zyy.smartfloat.network.LlmRequest
@@ -110,12 +109,19 @@ class FloatingWindowService : Service() {
     private var redButton: CardView? = null
     private var floatLayoutParams: WindowManager.LayoutParams? = null
 
-    private val prefs by lazy { getSharedPreferences("smart_float_prefs", MODE_PRIVATE) }
+    private val prefs by lazy { getSharedPreferences("SmartFloatSettings", MODE_PRIVATE) }
     private var cachedImagePath: String? = null
 
     // 用于接收从 Intent 传递的问题
     private var llmQuestion: String = ""
-    private var isImage: Boolean = false
+    private var isEnableImage: Boolean = false
+    private var isEnableEnglish: Boolean = false
+    
+    private fun refreshSettings() {
+        isEnableImage = prefs.getBoolean("enable_image", false)
+        isEnableEnglish = prefs.getBoolean("enable_english", false)
+        Log.d(TAG, "Settings refreshed: isEnableImage=$isEnableImage, isEnableEnglish=$isEnableEnglish")
+    }
 
     companion object {
         const val CHANNEL_ID = "floating_window_channel"
@@ -137,6 +143,7 @@ class FloatingWindowService : Service() {
         windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
         createNotificationChannel()
         getScreenSize()
+        refreshSettings()
         Log.d(TAG, "Screen size: $screenWidth x $screenHeight")
     }
 
@@ -306,10 +313,11 @@ class FloatingWindowService : Service() {
                     // 取消焦点和编辑模式
                     floatingText?.clearFocus()
                     isEditing = false
+                    refreshSettings()
                     val imm = getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager
                     imm.hideSoftInputFromWindow(floatingText?.windowToken, 0)
-
-                    Toast.makeText(this@FloatingWindowService, "截图上传中...", Toast.LENGTH_SHORT).show()
+                    recognizedText = floatingText?.text?.toString() ?: ""
+                    Toast.makeText(this@FloatingWindowService, "处理中...", Toast.LENGTH_SHORT).show()
                     captureAndUpload()
                 }
             }
@@ -465,9 +473,7 @@ class FloatingWindowService : Service() {
         isProcessing = true
         val taskId = currentTaskId.incrementAndGet()
         Log.d(TAG, "Starting task #$taskId")
-        mainHandler.post {
-            updateFloatingText()
-        }
+        updateFloatingText()
         lastTapPoints.clear()
         serviceScope.launch {
             try {
@@ -485,6 +491,7 @@ class FloatingWindowService : Service() {
                             Toast.LENGTH_SHORT
                         ).show()
                     }
+                    isProcessing = false
                     return@launch
                 }
 
@@ -497,6 +504,7 @@ class FloatingWindowService : Service() {
                             Toast.LENGTH_SHORT
                         ).show()
                     }
+                    isProcessing = false
                     return@launch
                 }
                 /*withContext(Dispatchers.Main) {
@@ -526,7 +534,7 @@ class FloatingWindowService : Service() {
                     redButton?.visibility = View.VISIBLE
                 }
                 var imageUrl: String = ""
-                if(isImage){
+                if(isEnableImage){
                     val file = saveBitmapToFile(bitmap)
                     Log.d(TAG, "screenshot saved to: ${file.absolutePath}")
 
@@ -687,9 +695,14 @@ class FloatingWindowService : Service() {
                     false,
                     "简短的执行细节"
                 )
+
                 val gson = Gson()
                 val json = gson.toJson(lLmResponseExample)
-                val llmPrompt = buildLlmPrompt(this@FloatingWindowService, json)
+                val llmPrompt =
+                    if(isEnableImage)
+                        buildLlmPrompt(this@FloatingWindowService, json)
+                    else
+                        buildLlmPrompt(this@FloatingWindowService, json)
                 val llmBody = LLmBody(llmPrompt, question, screenWidth, screenHeight, history, "")
 
                 try {
@@ -701,7 +714,7 @@ class FloatingWindowService : Service() {
                     val modelId = activeModel?.id ?: 0L
                     val baseUrl = activeModel?.baseUrl ?: getString(R.string.llm_base_url)
                     var request: LlmRequest;
-                    if(isImage && currentImageUrl != null){
+                    if(isEnableImage && currentImageUrl != null){
                         request = LlmRequest(
                             model = model,
                             messages = listOf(
@@ -718,10 +731,11 @@ class FloatingWindowService : Service() {
                                         )
                                     )
                                 )
-                            )
+                            ),
+                            thinking = LLmThinkingType("disabled")
                         )
                     }else{
-                        llmBody.content = currentContent
+                        llmBody.z_content = currentContent
                         request = LlmRequest(
                             model = model,
                             messages = listOf(
@@ -734,7 +748,8 @@ class FloatingWindowService : Service() {
                                         )
                                     )
                                 )
-                            )
+                            ),
+                            thinking = LLmThinkingType("disabled")
                         )
                     }
 
@@ -799,6 +814,7 @@ class FloatingWindowService : Service() {
                         }
 
                         llmResponse?.remark?.let {
+
                             history.add(ProcessHistory(it, llmResponse.tapPoints))
                         }
 
@@ -811,7 +827,7 @@ class FloatingWindowService : Service() {
 
                             val bitmap = TapAccessibilityService.Companion.instance?.captureScreenshot()
 
-                            if(isImage){
+                            if(isEnableImage){
                                 withContext(Dispatchers.Main) {
                                     redButton?.visibility = View.VISIBLE
                                 }
@@ -829,6 +845,9 @@ class FloatingWindowService : Service() {
                                     currentContent = recognizeTextFromBitmap(bitmap)
                                 }
 
+                            }
+                            withContext(Dispatchers.Main) {
+                                redButton?.visibility = View.VISIBLE
                             }
 
                         }
@@ -911,16 +930,17 @@ class FloatingWindowService : Service() {
                 val recognizedTexts = mutableSetOf<String>()
                 val allBlocks = mutableListOf<Pair<Text.TextBlock, String>>()
 
-                // 添加英文识别结果
-                latinResult?.let {
-                    for (block in it.textBlocks) {
-                        if (!block.text.isBlank()) {
-                            recognizedTexts.add(block.text)
-                            allBlocks.add(Pair(block, "英文"))
+                if(isEnableEnglish){
+                    // 添加英文识别结果
+                    latinResult?.let {
+                        for (block in it.textBlocks) {
+                            if (!block.text.isBlank()) {
+                                recognizedTexts.add(block.text)
+                                allBlocks.add(Pair(block, "英文"))
+                            }
                         }
                     }
                 }
-
                 // 添加中文识别结果（去重）
                 chineseResult?.let {
                     for (block in it.textBlocks) {
@@ -936,15 +956,14 @@ class FloatingWindowService : Service() {
                     "未识别到任何文本（图片可能没有清晰文字）"
                 } else {
                     val stringBuilder = StringBuilder()
-                    stringBuilder.append("识别到 ${allBlocks.size} 个文本块:\n")
 
                     for ((index, pair) in allBlocks.withIndex()) {
                         val block = pair.first
                         val source = pair.second
                         val blockRect = block.boundingBox
-                        stringBuilder.append("context: \"${block.text}\" ($source)\n")
+                        stringBuilder.append("context: \"${block.text}\"")
                         if (blockRect != null) {
-                            stringBuilder.append("坐标: (${blockRect.centerX()}, ${blockRect.centerY()})\n")
+                            stringBuilder.append("坐标:(${blockRect.centerX()},${blockRect.centerY()})")
                             //stringBuilder.append("  边界: 左=${blockRect.left}, 上=${blockRect.top}, 右=${blockRect.right}, 下=${blockRect.bottom}\n")
                         }
 

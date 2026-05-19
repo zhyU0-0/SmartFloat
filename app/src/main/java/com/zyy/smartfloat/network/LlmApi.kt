@@ -17,12 +17,16 @@ interface LlmApi {
 
 data class LlmRequest(
     val model: String,
-    val messages: List<LlmMessage>
+    val messages: List<LlmMessage>,
+    val thinking: LLmThinkingType?
 )
 
 data class LlmMessage(
     val role: String,
     val content: List<LlmContent>
+)
+data class LLmThinkingType(
+    val type: String,
 )
 
 data class LlmResponseMessage(

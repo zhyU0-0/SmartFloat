@@ -38,6 +38,9 @@
         <activity
             android:name=".ModelManagerActivity"
             android:exported="false" />
+        <activity
+            android:name=".SettingsActivity"
+            android:exported="false" />
         <service
             android:name=".service.FloatingWindowService"
             android:exported="false"

@@ -7,7 +7,7 @@ import android.os.Looper
 import android.util.Log
 import androidx.annotation.RequiresPermission
 import com.zyy.smartfloat.utils.AudioRecorder
-import com.zyy.smartfloat.viewModel.QCloudAsrApi
+import com.zyy.smartfloat.utils.QCloudAsrApi
 import com.zyy.smartfloat.R
 
 class VoiceRecognizer(

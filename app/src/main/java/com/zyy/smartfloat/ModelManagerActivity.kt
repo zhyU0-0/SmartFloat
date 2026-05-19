@@ -60,6 +60,9 @@ fun ModelManagerScreen(
     var clipboardDialogText by remember { mutableStateOf("") }
     val context = LocalContext.current
     val gson = Gson()
+    
+    // 使用 collectAsState 观察状态变化
+    val models by viewModel.models.collectAsState()
 
     Column(
         modifier = modifier
@@ -87,7 +90,7 @@ fun ModelManagerScreen(
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        if (viewModel.models.collectAsState().value.isEmpty()) {
+        if (models.isEmpty()) {
             Box(
                 modifier = Modifier.fillMaxSize(),
                 contentAlignment = Alignment.Center
@@ -99,7 +102,7 @@ fun ModelManagerScreen(
                 modifier = Modifier.weight(1f),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                items(viewModel.models.value) { model ->
+                items(models) { model ->
                     ModelCard(
                         model = model,
                         isActive = model.isActive,
