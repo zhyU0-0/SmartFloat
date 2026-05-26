@@ -98,7 +98,7 @@ fun StatisticsScreen(
                 modifier = Modifier.padding(16.dp)
             ) {
                 Text(
-                    text = "近 30 天 Token 使用",
+                    text = "近 7 天 Token 使用",
                     fontSize = 18.sp,
                     fontWeight = FontWeight.Bold,
                     modifier = Modifier.padding(bottom = 8.dp)

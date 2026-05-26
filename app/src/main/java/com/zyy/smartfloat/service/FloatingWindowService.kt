@@ -46,6 +46,7 @@ import com.google.mlkit.vision.text.latin.TextRecognizerOptions
 import com.zyy.smartfloat.MainActivity
 import com.zyy.smartfloat.MyApp
 import com.zyy.smartfloat.R
+import com.zyy.smartfloat.database.AppDatabase
 import com.zyy.smartfloat.utils.VoiceRecognizer
 import com.zyy.smartfloat.network.ImageUrl
 import com.zyy.smartfloat.network.LLmThinkingType
@@ -88,7 +89,8 @@ class FloatingWindowService : Service() {
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var screenWidth = 0
     private var screenHeight = 0
-    val maxLoops = 100
+    private var maxLoops = 100
+    private var tokenThreshold = 100000
 
     // 语音识别相关 - 使用 VoiceRecognizer 封装类
     private var voiceRecognizer: VoiceRecognizer? = null
@@ -116,15 +118,43 @@ class FloatingWindowService : Service() {
     private var llmQuestion: String = ""
     private var isEnableImage: Boolean = false
     private var isEnableEnglish: Boolean = false
+    private val MAX_HISTORY_SIZE = 3//history最大长度
     
     private fun refreshSettings() {
         isEnableImage = prefs.getBoolean("enable_image", false)
         isEnableEnglish = prefs.getBoolean("enable_english", false)
-        Log.d(TAG, "Settings refreshed: isEnableImage=$isEnableImage, isEnableEnglish=$isEnableEnglish")
+        maxLoops = prefs.getInt("max_loops", 100)
+        tokenThreshold = prefs.getInt("token_threshold", 100000)
+        Log.d(TAG, "Settings refreshed: isEnableImage=$isEnableImage, isEnableEnglish=$isEnableEnglish, maxLoops=$maxLoops, tokenThreshold=$tokenThreshold")
+    }
+
+    private fun checkAndNotifyTokenThreshold() {
+        if (tokenThreshold <= 0) {
+            Log.d(TAG, "Token check: todayUsage=0, threshold=$tokenThreshold");
+            return;
+        }
+        val database = AppDatabase.getInstance(this)
+        val todayUsage = database.getTodayTokenUsage()
+        Log.d(TAG, "Token check: todayUsage=$todayUsage, threshold=$tokenThreshold")
+        
+        if (todayUsage >= tokenThreshold) {
+            val notification = Notification.Builder(this, TOKEN_CHANNEL_ID)
+                .setSmallIcon(android.R.drawable.ic_dialog_info)
+                .setContentTitle("Token消耗提醒")
+                .setContentText("今日已使用 $todayUsage Tokens，已超过阈值 $tokenThreshold")
+                .setPriority(Notification.PRIORITY_HIGH)
+                .setAutoCancel(true)
+                .build()
+            
+            val notificationManager = getSystemService(NotificationManager::class.java)
+            notificationManager.notify(NOTIFICATION_ID + 1, notification)
+            Log.d(TAG, "Token threshold exceeded notification sent")
+        }
     }
 
     companion object {
         const val CHANNEL_ID = "floating_window_channel"
+        const val TOKEN_CHANNEL_ID = "token_reminder_channel"
         const val NOTIFICATION_ID = 1001
         const val ACTION_STOP = "com.zyy.smartfloat.STOP_SERVICE"
         const val ACTION_LLM_RESULT = "com.zyy.smartfloat.LLM_RESULT"
@@ -205,6 +235,15 @@ class FloatingWindowService : Service() {
             }
             val manager = getSystemService(NotificationManager::class.java)
             manager.createNotificationChannel(channel)
+
+            val tokenChannel = NotificationChannel(
+                TOKEN_CHANNEL_ID,
+                "Token消耗提醒",
+                NotificationManager.IMPORTANCE_HIGH
+            ).apply {
+                description = "当今日Token消耗超过阈值时发送提醒"
+            }
+            manager.createNotificationChannel(tokenChannel)
         }
     }
 
@@ -342,6 +381,13 @@ class FloatingWindowService : Service() {
                         layoutParams.y = initialY + (event.rawY - initialTouchY).toInt()
                         Log.d(TAG, "button is MOVE ("+event.rawX+" , "+event.rawY+")")
                         wm.updateViewLayout(floatView, layoutParams)
+                        
+                        // 如果移动距离超过阈值，取消长按检测（防止移动时触发录音）
+                        val deltaX = Math.abs(event.rawX - initialTouchX)
+                        val deltaY = Math.abs(event.rawY - initialTouchY)
+                        if (deltaX > 10 || deltaY > 10) {
+                            mainHandler.removeCallbacks(longPressRunnable)
+                        }
                         true
                     }
                     MotionEvent.ACTION_UP -> {
@@ -350,13 +396,18 @@ class FloatingWindowService : Service() {
                         val deltaX = Math.abs(event.rawX - initialTouchX)
                         val deltaY = Math.abs(event.rawY - initialTouchY)
 
-                        if (isProcessing) {
-                            // 如果正在处理中，点击按钮取消任务
-                            cancelProcessing()
-                        } else if (longPressTriggered && isRecording) {
+                        // 只有当移动距离小于阈值时才认为是点击操作
+                        if (deltaX <= 10 && deltaY <= 10) {
+                            if (isProcessing) {
+                                // 如果正在处理中，点击按钮取消任务
+                                cancelProcessing()
+                            }
+                        }
+                        if (longPressTriggered && isRecording) {
                             // 停止录音并识别
                             stopRecordingAndRecognize()
                         }
+
                         true
                     }
                     else -> false
@@ -780,6 +831,7 @@ class FloatingWindowService : Service() {
                                 modelId = modelId,
                                 modelName = model
                             )
+                            checkAndNotifyTokenThreshold()
                         } catch (e: Exception) {
                             Log.e(TAG, "记录对话失败: ${e.message}", e)
                         }
@@ -814,7 +866,9 @@ class FloatingWindowService : Service() {
                         }
 
                         llmResponse?.remark?.let {
-
+                            if (history.size >= MAX_HISTORY_SIZE) {
+                                history.removeAt(0)
+                            }
                             history.add(ProcessHistory(it, llmResponse.tapPoints))
                         }
 

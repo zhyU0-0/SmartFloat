@@ -1,6 +1,7 @@
 package com.zyy.smartfloat
 
 import android.os.Bundle
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -14,8 +15,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.ViewModelProvider
+import com.zyy.smartfloat.viewmodel.SettingsViewModel
 import com.zyy.smartfloat.ui.theme.SmartFloatTheme
-import com.zyy.smartfloat.viewModel.SettingsViewModel
+
 
 class SettingsActivity : ComponentActivity() {
     private lateinit var viewModel: SettingsViewModel
@@ -49,6 +51,8 @@ fun SettingsScreen(
     
     var enableImage by remember { mutableStateOf(viewModel.isEnableImage()) }
     var enableEnglish by remember { mutableStateOf(viewModel.isEnableEnglish()) }
+    var maxLoops by remember { mutableStateOf(viewModel.getMaxLoops().toString()) }
+    var tokenThreshold by remember { mutableStateOf(viewModel.getTokenThreshold().toString()) }
 
     Column(
         modifier = modifier
@@ -120,6 +124,88 @@ fun SettingsScreen(
                             viewModel.setEnableEnglish(it)
                         }
                     )
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        Card(modifier = Modifier.fillMaxWidth()) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Text(
+                    text = "最大循环次数",
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Medium
+                )
+                Text(
+                    text = "AI执行任务的最大循环次数，防止无限循环",
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    OutlinedTextField(
+                        value = maxLoops,
+                        onValueChange = { maxLoops = it },
+                        modifier = Modifier.width(80.dp),
+                        label = { Text("次数") },
+                        keyboardOptions = androidx.compose.foundation.text.KeyboardOptions.Default.copy(
+                            keyboardType = androidx.compose.ui.text.input.KeyboardType.Number
+                        )
+                    )
+                    Button(
+                        onClick = {
+                            val value = maxLoops.toIntOrNull() ?: 100
+                            viewModel.setMaxLoops(value)
+                            Toast.makeText(context, "已保存", Toast.LENGTH_SHORT).show()
+                        }
+                    ) {
+                        Text("保存")
+                    }
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        Card(modifier = Modifier.fillMaxWidth()) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Text(
+                    text = "Token阈值提醒",
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Medium
+                )
+                Text(
+                    text = "今日Token消耗超过此值时发送通知，0表示不提醒",
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    OutlinedTextField(
+                        value = tokenThreshold,
+                        onValueChange = { tokenThreshold = it },
+                        modifier = Modifier.width(100.dp),
+                        label = { Text("Token") },
+                        keyboardOptions = androidx.compose.foundation.text.KeyboardOptions.Default.copy(
+                            keyboardType = androidx.compose.ui.text.input.KeyboardType.Number
+                        )
+                    )
+                    Button(
+                        onClick = {
+                            val value = tokenThreshold.toIntOrNull() ?: 100000
+                            viewModel.setTokenThreshold(value)
+                            Toast.makeText(context, "已保存", Toast.LENGTH_SHORT).show()
+                        }
+                    ) {
+                        Text("保存")
+                    }
                 }
             }
         }

@@ -245,7 +245,7 @@ class AppDatabase(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME, n
             FROM $TABLE_CONVERSATION
             GROUP BY date
             ORDER BY date DESC
-            LIMIT 30
+            LIMIT 7
         """, null)
 
         val list = mutableListOf<DailyTokenUsage>()
@@ -294,6 +294,37 @@ class AppDatabase(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME, n
         }
         Log.d("total",total.toString())
         Log.d("cursor",cursor.toString())
+        cursor.close()
+        return total
+    }
+
+    fun getTodayTokenUsage(): Int {
+        val db = readableDatabase
+
+        val calendar = java.util.Calendar.getInstance()
+
+        calendar.set(java.util.Calendar.HOUR_OF_DAY, 0)
+        calendar.set(java.util.Calendar.MINUTE, 0)
+        calendar.set(java.util.Calendar.SECOND, 0)
+        calendar.set(java.util.Calendar.MILLISECOND, 0)
+        val startOfDay = calendar.timeInMillis
+
+        calendar.set(java.util.Calendar.HOUR_OF_DAY, 23)
+        calendar.set(java.util.Calendar.MINUTE, 59)
+        calendar.set(java.util.Calendar.SECOND, 59)
+        calendar.set(java.util.Calendar.MILLISECOND, 999)
+        val endOfDay = calendar.timeInMillis
+
+        val cursor = db.rawQuery("""
+            SELECT COALESCE(SUM($COL_INPUT_TOKEN + $COL_OUTPUT_TOKEN), 0) as totalToken
+            FROM $TABLE_CONVERSATION
+            WHERE $COL_CONV_CREATED_AT >= ? AND $COL_CONV_CREATED_AT <= ?
+        """, arrayOf(startOfDay.toString(), endOfDay.toString()))
+
+        var total = 0
+        if (cursor.moveToFirst()) {
+            total = cursor.getInt(cursor.getColumnIndexOrThrow("totalToken"))
+        }
         cursor.close()
         return total
     }

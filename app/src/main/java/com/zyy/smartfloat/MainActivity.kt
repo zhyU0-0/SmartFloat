@@ -206,7 +206,12 @@ fun FloatingButtonScreen(
         }
     }
 
-    val isAccessibilityEnabled = isAccessibilityServiceEnabled(context)
+    var isAccessibilityEnabled by remember { mutableStateOf(false) }
+    
+    DisposableEffect(Unit) {
+        isAccessibilityEnabled = isAccessibilityServiceEnabled(context)
+        onDispose { }
+    }
 
     LazyColumn(
         modifier = modifier.fillMaxSize(),
@@ -229,12 +234,21 @@ fun FloatingButtonScreen(
                 )
             }
             item {
-                TextButton(onClick = {
-                    val intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
-                    intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                    accessibilityLauncher.launch(intent)
-                }) {
-                    Text("前往开启", color = MaterialTheme.colorScheme.primary)
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    TextButton(onClick = {
+                        val intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
+                        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        accessibilityLauncher.launch(intent)
+                    }) {
+                        Text("前往开启", color = MaterialTheme.colorScheme.primary)
+                    }
+                    TextButton(onClick = {
+                        isAccessibilityEnabled = isAccessibilityServiceEnabled(context)
+                    }) {
+                        Text("刷新状态", color = MaterialTheme.colorScheme.secondary)
+                    }
                 }
             }
         }
@@ -309,80 +323,9 @@ fun FloatingButtonScreen(
                 }
             }
         }
-
-        if (llmResult.isNotEmpty()) {
-            item {
-                Spacer(modifier = Modifier.height(20.dp))
-            }
-            item {
-                Text(
-                    text = "LLM回答 (共${llmResult.size}条):",
-                    color = Color(0xFF4CAF50),
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier.padding(horizontal = 16.dp)
-                )
-            }
-            item {
-                Spacer(modifier = Modifier.height(8.dp))
-            }
-            items(llmResult.size) { index ->
-                Text(
-                    text = "${index + 1}. ${llmResult[index]}",
-                    color = Color(0xFF333333),
-                    fontSize = 13.sp,
-                    modifier = Modifier.padding(horizontal = 16.dp)
-                )
-            }
-        }
-
         item {
-            Spacer(modifier = Modifier.height(20.dp))
+            Spacer(modifier = Modifier.height(32.dp))
         }
-
-        if (instructionRecords.isNotEmpty()) {
-            item {
-                Text(
-                    text = "历史记录",
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier.padding(horizontal = 16.dp)
-                )
-            }
-            item {
-                Spacer(modifier = Modifier.height(8.dp))
-            }
-            items(instructionRecords) { record ->
-                Card(
-                    colors = CardDefaults.cardColors(
-                        containerColor = Color(0xFFF5F5F5)
-                    ),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp)
-                ) {
-                    Column(modifier = Modifier.padding(12.dp)) {
-                        Text(
-                            text = "指令: ${record.instruction}",
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.Medium,
-                            color = Color(0xFF333333)
-                        )
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text(
-                            text = "结果: ${record.remark}",
-                            fontSize = 13.sp,
-                            color = Color(0xFF666666)
-                        )
-                    }
-                }
-            }
-        }
-
-        item {
-            Spacer(modifier = Modifier.height(16.dp))
-        }
-
         item {
             Row(
                 modifier = Modifier
@@ -419,9 +362,33 @@ fun FloatingButtonScreen(
                 }
             }
         }
-
         item {
-            Spacer(modifier = Modifier.height(32.dp))
+            Spacer(modifier = Modifier.height(16.dp))
+        }
+        if (llmResult.isNotEmpty()) {
+            item {
+                Spacer(modifier = Modifier.height(20.dp))
+            }
+            item {
+                Text(
+                    text = "LLM回答 (共${llmResult.size}条):",
+                    color = Color(0xFF4CAF50),
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.padding(horizontal = 16.dp)
+                )
+            }
+            item {
+                Spacer(modifier = Modifier.height(8.dp))
+            }
+            items(llmResult.size) { index ->
+                Text(
+                    text = "${index + 1}. ${llmResult[index]}",
+                    color = Color(0xFF333333),
+                    fontSize = 13.sp,
+                    modifier = Modifier.padding(horizontal = 16.dp)
+                )
+            }
         }
     }
 }
