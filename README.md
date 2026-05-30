@@ -1,6 +1,15 @@
 # SmartFloat - 智能悬浮窗助手
 
 一款基于大语言模型的Android智能悬浮窗应用，通过语音命令实现自动化操作。
+## 📱 应用截图
+
+<div align="center">
+
+| | | | |
+|:---:|:---:|:---:|:---:|
+| ![截图1](https://github.com/user-attachments/assets/d364604a-151c-4d1a-a5fa-475e9a6b7f36) | ![截图2](https://github.com/user-attachments/assets/d8bfa7ac-4a4a-45fb-a3b8-781fac62a2e2) |![截图3](https://github.com/user-attachments/assets/e1e4cf75-2748-410a-aa50-cf309ce9bc90) | ![截图4](https://github.com/user-attachments/assets/eac45008-e8ba-4a47-bbff-ca73a1003aab) |
+
+</div>
 
 ## 功能特点
 
