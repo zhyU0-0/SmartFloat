@@ -53,6 +53,37 @@ fun SettingsScreen(
     var enableEnglish by remember { mutableStateOf(viewModel.isEnableEnglish()) }
     var maxLoops by remember { mutableStateOf(viewModel.getMaxLoops().toString()) }
     var tokenThreshold by remember { mutableStateOf(viewModel.getTokenThreshold().toString()) }
+    var showImageWarningDialog by remember { mutableStateOf(false) }
+
+    if (showImageWarningDialog) {
+        AlertDialog(
+            onDismissRequest = {
+                showImageWarningDialog = false
+            },
+            title = { Text("提示") },
+            text = { Text("图片识别功能需要使用多模态大模型，请确认当前配置的模型支持图片识别") },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        enableImage = true
+                        viewModel.setEnableImage(true)
+                        showImageWarningDialog = false
+                    }
+                ) {
+                    Text("确定")
+                }
+            },
+            dismissButton = {
+                Button(
+                    onClick = {
+                        showImageWarningDialog = false
+                    }
+                ) {
+                    Text("取消")
+                }
+            }
+        )
+    }
 
     Column(
         modifier = modifier
@@ -87,9 +118,13 @@ fun SettingsScreen(
                     }
                     Switch(
                         checked = enableImage,
-                        onCheckedChange = {
-                            enableImage = it
-                            viewModel.setEnableImage(it)
+                        onCheckedChange = { checked ->
+                            if (checked) {
+                                showImageWarningDialog = true
+                            } else {
+                                enableImage = false
+                                viewModel.setEnableImage(false)
+                            }
                         }
                     )
                 }

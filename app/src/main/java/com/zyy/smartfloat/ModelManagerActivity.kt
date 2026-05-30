@@ -3,6 +3,7 @@ package com.zyy.smartfloat
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import android.media.Image
 import android.os.Bundle
 import android.util.Log
 import android.widget.Toast
@@ -10,6 +11,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.*
@@ -28,6 +30,7 @@ import com.zyy.smartfloat.database.ModelConfig
 import com.zyy.smartfloat.ui.theme.SmartFloatTheme
 import com.zyy.smartfloat.viewmodel.ModelManagerViewModel
 import androidx.compose.runtime.collectAsState
+import androidx.compose.ui.res.painterResource
 
 class ModelManagerActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -131,7 +134,10 @@ fun ModelManagerScreen(
                     editingModelId = null
                 },
                 title = {
-                    Row {
+                    Row (
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ){
                         Text(if (editingModelId != null) "编辑模型" else "添加新模型")
                         if (editingModelId == null) {
                             Button(
@@ -148,9 +154,17 @@ fun ModelManagerScreen(
                                             newApiKey = addModel.apiKey
                                         }
                                     }
-                                }
+                                },
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = Color(0xe3e5f3)
+                                ),
                             ) {
-                                Text("剪切板")
+                                Icon(
+                                    painter = painterResource(id = R.drawable.ic_clipboard),
+                                    contentDescription = "剪切板图标",
+                                    tint = Color(0xFF0052D4),
+                                    modifier = Modifier.size(24.dp)
+                                )
                             }
                         } else {
                             Row {
@@ -162,9 +176,17 @@ fun ModelManagerScreen(
                                             newBaseUrl
                                         )
                                         viewModel.copyAddMode(context, addModel)
-                                    }
+                                    },
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = Color(0xe3e5f3)
+                                    ),
                                 ) {
-                                    Text("复制")
+                                    Icon(
+                                        painter = painterResource(id = R.drawable.ic_copy),
+                                        contentDescription = "复制图标",
+                                        tint = Color(0xFF0052D4),
+                                        modifier = Modifier.size(24.dp)
+                                    )
                                 }
                             }
                         }

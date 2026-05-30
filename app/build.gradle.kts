@@ -64,6 +64,7 @@ dependencies {
     testImplementation(libs.junit)
     implementation("com.google.mlkit:text-recognition-chinese:16.0.0")
     implementation("com.google.mlkit:text-recognition:16.0.0")
+    implementation("androidx.compose.material:material-icons-extended:1.7.5")
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
     androidTestImplementation(platform(libs.androidx.compose.bom))
