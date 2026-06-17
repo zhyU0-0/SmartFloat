@@ -125,6 +125,8 @@ class AudioRecorder(private val context: Context) {
         try {
             audioRecord?.release()
             audioRecord = null
+            onErrorCallback = null
+            onStartCallback = null
         } catch (e: Exception) {
             Log.e(TAG, "释放资源失败: ${e.message}")
         }

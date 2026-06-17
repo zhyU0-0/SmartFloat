@@ -25,6 +25,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
@@ -41,16 +42,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.Done
-import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.Stop
-import androidx.compose.material.icons.filled.Visibility
-import androidx.compose.material.icons.outlined.Analytics
-import androidx.compose.material.icons.outlined.ModelTraining
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -77,9 +68,11 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -101,7 +94,7 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
 
         viewModel = ViewModelProvider(this)[MainViewModel::class.java]
-        viewModel.init(this)
+        viewModel.init(applicationContext)
 
         setContent {
             MaterialTheme(
@@ -309,11 +302,11 @@ fun FloatingButtonScreen(
                             ),
                         contentAlignment = Alignment.Center
                     ) {
-                        Icon(
-                            imageVector = Icons.Filled.Visibility,
+                        Image(
+                            painter = painterResource(id = R.drawable.ic_app),//Visibility
                             contentDescription = null,
-                            tint = Color.White,
-                            modifier = Modifier.size(40.dp)
+                            colorFilter = ColorFilter.tint(Color.White),  // 着色
+                            modifier = Modifier.size(30.dp)
                         )
                     }
                     Spacer(modifier = Modifier.height(16.dp))
@@ -355,11 +348,11 @@ fun FloatingButtonScreen(
                             verticalAlignment = Alignment.CenterVertically,
                             modifier = Modifier.weight(1f)
                         ) {
-                            Icon(
-                                imageVector = Icons.Filled.Refresh,
+                            Image(
+                                painter = painterResource(id = R.drawable.ic_refresh),//Refresh
                                 contentDescription = null,
-                                tint = Color(0xFFFF9800),
-                                modifier = Modifier.size(24.dp)
+                                colorFilter = ColorFilter.tint(Color(0xFFFF9800)),  // 着色
+                                modifier = Modifier.size(20.dp)
                             )
                             Spacer(modifier = Modifier.width(12.dp))
                             Column {
@@ -399,10 +392,10 @@ fun FloatingButtonScreen(
                                 },
                                 modifier = Modifier.size(36.dp)
                             ) {
-                                Icon(
-                                    imageVector = Icons.Filled.Refresh,
-                                    contentDescription = "刷新",
-                                    tint = Color(0xFF999999),
+                                Image(
+                                    painter = painterResource(id = R.drawable.ic_refresh),//Refresh
+                                    contentDescription = null,
+                                    colorFilter = ColorFilter.tint(Color(0xFF999999)),  // 着色
                                     modifier = Modifier.size(20.dp)
                                 )
                             }
@@ -449,11 +442,11 @@ fun FloatingButtonScreen(
                     horizontalArrangement = Arrangement.Center,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Icon(
-                        imageVector = if (isFloatingShowing) Icons.Filled.Stop else Icons.Filled.PlayArrow,
+                    Image(
+                        painter = painterResource(id = if (isFloatingShowing) R.drawable.ic_stop else R.drawable.ic_play),//PlayArrow
                         contentDescription = null,
-                        tint = if (isFloatingShowing) Color(0xFF666666) else Color.White,
-                        modifier = Modifier.size(28.dp)
+                        colorFilter = ColorFilter.tint(if (isFloatingShowing) Color(0xFF666666) else Color.White),  // 着色
+                        modifier = Modifier.size(20.dp)
                     )
                     Spacer(modifier = Modifier.width(12.dp))
                     Text(
@@ -492,10 +485,10 @@ fun FloatingButtonScreen(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.Center
                     ) {
-                        Icon(
-                            imageVector = Icons.Outlined.Analytics,
+                        Image(
+                            painter = painterResource(id = R.drawable.ic_analytics),//Analytics
                             contentDescription = null,
-                            tint = Color.White,
+                            colorFilter = ColorFilter.tint(Color.White),  // 着色
                             modifier = Modifier.size(20.dp)
                         )
                         Spacer(modifier = Modifier.width(8.dp))
@@ -526,11 +519,11 @@ fun FloatingButtonScreen(
                         horizontalArrangement = Arrangement.Start,
                         modifier = Modifier.padding(0.dp)
                     ) {
-                        Icon(
-                            imageVector = Icons.Outlined.ModelTraining,
+                        Image(
+                            painter = painterResource(id = R.drawable.ic_model),//ModelTraining
                             contentDescription = null,
-                            tint = Color.White,
-                            modifier = Modifier.size(20.dp)
+                            colorFilter = ColorFilter.tint(Color.White),  // 着色
+                            modifier = Modifier.size(18.dp)
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
@@ -559,10 +552,10 @@ fun FloatingButtonScreen(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.Center
                     ) {
-                        Icon(
-                            imageVector = Icons.Filled.Settings,
+                        Image(
+                            painter = painterResource(id = R.drawable.ic_setting),//Settings
                             contentDescription = null,
-                            tint = Color.White,
+                            colorFilter = ColorFilter.tint(Color.White),  // 着色
                             modifier = Modifier.size(20.dp)
                         )
                         Spacer(modifier = Modifier.width(8.dp))
@@ -596,10 +589,10 @@ fun FloatingButtonScreen(
                             modifier = Modifier.padding(16.dp)
                         ) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(
-                                    imageVector = Icons.Filled.CheckCircle,
+                                Image(
+                                    painter = painterResource(id = R.drawable.ic_check_circle),//CheckCircle
                                     contentDescription = null,
-                                    tint = Color(0xFF0052D4),
+                                    colorFilter = ColorFilter.tint(Color(0xFF0052D4)),  // 着色
                                     modifier = Modifier.size(20.dp)
                                 )
                                 Spacer(modifier = Modifier.width(8.dp))
@@ -643,10 +636,10 @@ fun FloatingButtonScreen(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(
-                                    imageVector = Icons.Filled.Done,
+                                Image(
+                                    painter = painterResource(id = R.drawable.ic_done),//Done
                                     contentDescription = null,
-                                    tint = Color(0xFF4CAF50),
+                                    colorFilter = ColorFilter.tint(Color(0xFF4CAF50)),  // 着色
                                     modifier = Modifier.size(20.dp)
                                 )
                                 Spacer(modifier = Modifier.width(8.dp))

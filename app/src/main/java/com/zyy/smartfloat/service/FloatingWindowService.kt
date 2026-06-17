@@ -221,6 +221,9 @@ class FloatingWindowService : Service() {
     override fun onDestroy() {
         serviceScope.cancel()
         hideFloatingWindow()
+        mainHandler.removeCallbacks (longPressRunnable)
+        voiceRecognizer?.release()
+        voiceRecognizer = null
         super.onDestroy()
     }
 
