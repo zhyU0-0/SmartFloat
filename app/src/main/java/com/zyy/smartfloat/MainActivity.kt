@@ -11,6 +11,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
+import android.util.Log
 import android.view.accessibility.AccessibilityManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.ManagedActivityResultLauncher
@@ -49,6 +50,7 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
@@ -78,6 +80,9 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
+import androidx.core.content.FileProvider
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.zyy.smartfloat.database.InstructionRecord
@@ -113,6 +118,51 @@ class MainActivity : ComponentActivity() {
                 val instructionRecords by viewModel.instructionRecords.collectAsStateWithLifecycle()
                 val imageRecognitionResult by viewModel.imageRecognitionResult.collectAsStateWithLifecycle()
                 val llmQuestion by viewModel.llmQuestion.collectAsStateWithLifecycle()
+
+                // 版本更新相关状态
+                val showUpdateDialog by viewModel.showUpdateDialog.collectAsStateWithLifecycle()
+                val downloadDialogVisible by viewModel.downloadDialogVisible.collectAsStateWithLifecycle()
+                val versionInfo by viewModel.versionInfo.collectAsStateWithLifecycle()
+                val downloadProgress by viewModel.downloadProgress.collectAsStateWithLifecycle()
+                val downloadedBytes by viewModel.downloadedBytes.collectAsStateWithLifecycle()
+                val totalBytes by viewModel.totalBytes.collectAsStateWithLifecycle()
+                val downloadError by viewModel.downloadError.collectAsStateWithLifecycle()
+                val pendingApkPath by viewModel.pendingApkPath.collectAsStateWithLifecycle()
+
+                // 进入 APP 时检测是否有新版本
+                LaunchedEffect(Unit) {
+                    viewModel.checkVersion()
+                }
+
+                // 下载完成后触发安装
+                LaunchedEffect(pendingApkPath) {
+                    val path = pendingApkPath
+                    if (!path.isNullOrBlank()) {
+                        val canInstall = installApk(path)
+                        // 若 installApk 返回 false，说明权限不足跳转设置了，
+                        // 此时不 dismiss pendingApkPath，等待用户从设置回来后自动重试
+                        if (canInstall) {
+                            viewModel.dismissDownloadDialog()
+                        }
+                    }
+                }
+
+                // 监听 ON_RESUME：用户从未知来源设置页回来后，重试安装
+                val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+                DisposableEffect(lifecycleOwner, pendingApkPath) {
+                    val observer = LifecycleEventObserver { _, event ->
+                        if (event == Lifecycle.Event.ON_RESUME && !pendingApkPath.isNullOrBlank()) {
+                            val canInstall = installApk(pendingApkPath!!)
+                            if (canInstall) {
+                                viewModel.dismissDownloadDialog()
+                            }
+                        }
+                    }
+                    lifecycleOwner.lifecycle.addObserver(observer)
+                    onDispose {
+                        lifecycleOwner.lifecycle.removeObserver(observer)
+                    }
+                }
 
                 if (showAddModelReminder) {
                     AlertDialog(
@@ -154,6 +204,128 @@ class MainActivity : ComponentActivity() {
                                 }
                             ) {
                                 Text("稍后", color = Color(0xFF999999))
+                            }
+                        },
+                        shape = RoundedCornerShape(24.dp),
+                        containerColor = Color.White
+                    )
+                }
+
+                // 更新提醒弹窗
+                if (showUpdateDialog) {
+                    versionInfo?.let { v ->
+                        AlertDialog(
+                            onDismissRequest = { viewModel.dismissUpdateDialog() },
+                            title = {
+                                Text(
+                                    "发现新版本",
+                                    fontSize = 20.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color(0xFF0052D4)
+                                )
+                            },
+                            text = {
+                                Column {
+                                    Text(
+                                        "有新版本可用，建议立即更新。",
+                                        fontSize = 14.sp,
+                                        color = Color(0xFF333333)
+                                    )
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                    Text(
+                                        "版本：${v.version ?: "未知"}",
+                                        fontSize = 13.sp,
+                                        color = Color(0xFF666666)
+                                    )
+                                    Text(
+                                        "大小：${formatBytes(v.size ?: 0L)}",
+                                        fontSize = 13.sp,
+                                        color = Color(0xFF666666)
+                                    )
+                                }
+                            },
+                            confirmButton = {
+                                Button(
+                                    onClick = { viewModel.downloadAndInstallPackage() },
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = Color(0xFF0052D4)
+                                    ),
+                                    shape = RoundedCornerShape(12.dp)
+                                ) {
+                                    Text("立即更新", color = Color.White, fontWeight = FontWeight.Medium)
+                                }
+                            },
+                            dismissButton = {
+                                TextButton(
+                                    onClick = { viewModel.dismissUpdateDialog() }
+                                ) {
+                                    Text("稍后再说", color = Color(0xFF999999))
+                                }
+                            },
+                            shape = RoundedCornerShape(24.dp),
+                            containerColor = Color.White
+                        )
+                    }
+                }
+
+                // 下载进度弹窗（用户点更新后才出现）
+                if (downloadDialogVisible) {
+                    val hasError = downloadError != null
+                    AlertDialog(
+                        onDismissRequest = {
+                            if (hasError) viewModel.dismissDownloadDialog()
+                        },
+                        title = {
+                            Text(
+                                if (hasError) "更新失败" else "正在下载更新",
+                                fontSize = 20.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = if (hasError) Color(0xFFE53935) else Color(0xFF0052D4)
+                            )
+                        },
+                        text = {
+                            Column {
+                                versionInfo?.let { v ->
+                                    Text(
+                                        "版本：${v.version ?: "未知"}",
+                                        fontSize = 14.sp,
+                                        color = Color(0xFF333333)
+                                    )
+                                    Spacer(modifier = Modifier.height(12.dp))
+                                }
+                                if (hasError) {
+                                    Text(
+                                        downloadError ?: "",
+                                        fontSize = 13.sp,
+                                        color = Color(0xFFE53935)
+                                    )
+                                } else {
+                                    LinearProgressIndicator(
+                                        progress = { downloadProgress / 100f },
+                                        modifier = Modifier.fillMaxWidth(),
+                                        color = Color(0xFF0052D4),
+                                        trackColor = Color(0xFFE0E0E0)
+                                    )
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                    Text(
+                                        "${formatBytes(downloadedBytes)} / ${formatBytes(totalBytes)}  ($downloadProgress%)",
+                                        fontSize = 12.sp,
+                                        color = Color(0xFF888888)
+                                    )
+                                }
+                            }
+                        },
+                        confirmButton = {
+                            if (hasError) {
+                                Button(
+                                    onClick = { viewModel.dismissDownloadDialog() },
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = Color(0xFF0052D4)
+                                    ),
+                                    shape = RoundedCornerShape(12.dp)
+                                ) {
+                                    Text("关闭", color = Color.White)
+                                }
                             }
                         },
                         shape = RoundedCornerShape(24.dp),
@@ -816,4 +988,57 @@ private fun requestOverlayPermission(
     )
     intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
     launcher.launch(intent)
+}
+
+private fun formatBytes(bytes: Long): String {
+    if (bytes <= 0) return "0 B"
+    val units = arrayOf("B", "KB", "MB", "GB")
+    var value = bytes.toDouble()
+    var unitIndex = 0
+    while (value >= 1024 && unitIndex < units.lastIndex) {
+        value /= 1024
+        unitIndex++
+    }
+    return if (unitIndex == 0) "$bytes B" else String.format("%.2f %s", value, units[unitIndex])
+}
+
+/**
+ * 触发系统安装 APK。
+ * Android 7.0+ 使用 FileProvider，Android 8.0+ 需引导用户授权「允许安装未知来源应用」。
+ * @return true 表示已触发安装 Intent；false 表示权限不足，已跳转设置页等待用户授权。
+ */
+private fun Activity.installApk(apkPath: String): Boolean {
+    val apkFile = java.io.File(apkPath)
+    if (!apkFile.exists()) {
+        Log.e("PackageUpdate", "installApk: 文件不存在 $apkPath")
+        return false
+    }
+
+    // Android 8.0+ 需检查是否允许安装未知来源应用
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+        if (!packageManager.canRequestPackageInstalls()) {
+            Log.d("PackageUpdate", "installApk: 无未知来源安装权限，跳转设置")
+            val settingsIntent = Intent(
+                Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+                Uri.parse("package:$packageName")
+            )
+            startActivity(settingsIntent)
+            return false
+        }
+    }
+
+    val apkUri = FileProvider.getUriForFile(
+        this,
+        "${packageName}.fileprovider",
+        apkFile
+    )
+
+    val installIntent = Intent(Intent.ACTION_VIEW).apply {
+        setDataAndType(apkUri, "application/vnd.android.package-archive")
+        flags = Intent.FLAG_ACTIVITY_NEW_TASK or
+                Intent.FLAG_GRANT_READ_URI_PERMISSION or
+                Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+    }
+    startActivity(installIntent)
+    return true
 }
