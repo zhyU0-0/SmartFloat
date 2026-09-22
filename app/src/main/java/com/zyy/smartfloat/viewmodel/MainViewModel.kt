@@ -5,6 +5,9 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.util.Log
+import android.widget.Toast
+import android.widget.Toast.LENGTH_LONG
+import android.widget.Toast.LENGTH_SHORT
 import androidx.core.content.FileProvider
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -22,6 +25,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
+import kotlin.math.log
 
 class MainViewModel : ViewModel() {
 
@@ -181,29 +185,65 @@ class MainViewModel : ViewModel() {
     fun checkVersion() {
         viewModelScope.launch {
             try {
+                // 1. 首先检查Context
+                val ctx = context
+                if (ctx == null) {
+                    Log.e(TAG, "Context为空")
+                    return@launch
+                }
+
                 val response = RetrofitClient.packageApi.getVersion()
+
+                // 2. 检查响应
                 if (response.code != 1 || response.data == null) {
-                    Log.e(TAG, "获取版本失败 code=${response.code} msg=${response.message}")
+                    val errorMsg = "获取版本失败 code=${response.code} msg=${response.message}"
+                    Log.e(TAG, errorMsg)
                     return@launch
                 }
 
                 val version = response.data
                 _versionInfo.value = version
-                // 输出版本信息
+
+                // 3. 输出版本信息（带Toast）
                 Log.d(TAG, "PackageVersion: id=${version.id}, version=${version.version}, size=${version.size}, fileName=${version.fileName}")
 
-                val latestId = version.id ?: return@launch
-                val ctx = context ?: return@launch
+                val latestId = version.id ?: run {
+                    return@launch
+                }
+
+                // 4. 获取已安装版本
                 val installedId = getInstalledVersionId(ctx)
 
-                if (latestId > installedId) {
-                    _showUpdateDialog.value = true
-                    Log.d(TAG, "发现新版本 latest=$latestId installed=$installedId")
-                } else {
-                    Log.d(TAG, "已是最新版本 id=$latestId")
+                // 5. 获取当前应用版本信息
+                val pInfo = try {
+                    ctx.packageManager.getPackageInfo(ctx.packageName, 0)
+                } catch (e: Exception) {
+                    Log.e(TAG, "获取PackageInfo失败", e)
+                    return@launch
                 }
+
+                val currentVersion = pInfo.versionName?.toString() ?: "未知"
+                val latestVersion = version.version?.toString() ?: "未知"
+
+                val compareMsg = "现版本: $currentVersion  最新版本: $latestVersion"
+                Log.d(TAG, compareMsg)
+
+                // 6. 版本比较
+                if (compareVersion(currentVersion, latestVersion)) {
+                    _showUpdateDialog.value = true
+                    val updateMsg = "发现新版本 latest=$latestId installed=$installedId"
+                    Log.d(TAG, updateMsg)
+                } else {
+                    val noUpdateMsg = "已是最新版本 id=$latestId"
+                    Log.d(TAG, noUpdateMsg)
+                }
+
             } catch (e: Exception) {
-                Log.e(TAG, "checkVersion 异常: ${e.message ?: e.javaClass.simpleName}", e)
+                val errorMsg = "checkVersion 异常: ${e.message ?: e.javaClass.simpleName}"
+                Log.e(TAG, errorMsg, e)
+
+                // 打印详细堆栈
+                e.printStackTrace()
             }
         }
     }
@@ -215,6 +255,7 @@ class MainViewModel : ViewModel() {
     fun downloadAndInstallPackage() {
         viewModelScope.launch {
             val version = _versionInfo.value
+            version?.size?.toInt()?.let { if (it > 0) _totalBytes.value = version.size }
             if (version == null) {
                 _downloadError.value = "版本信息为空"
                 return@launch
@@ -238,8 +279,9 @@ class MainViewModel : ViewModel() {
                 val body = RetrofitClient.packageApi.getPackage(id)
                 withContext(Dispatchers.IO) {
                     val expectedSize = version.size ?: 0L
+                    Log.d("downloadAndInstallPackage","version.size ${version.size}")
                     val actualTotal = if (expectedSize > 0) expectedSize else body.contentLength().coerceAtLeast(0L)
-                    if (actualTotal > 0) _totalBytes.value = actualTotal
+
 
                     val ctx = context ?: return@withContext
                     val apkDir = ctx.getExternalFilesDir("apk") ?: ctx.cacheDir
@@ -297,5 +339,33 @@ class MainViewModel : ViewModel() {
             receiver?.let { LocalBroadcastManager.getInstance(ctx).unregisterReceiver(it) }
         }
         super.onCleared()
+    }
+
+    fun compareVersion(oldVersion: String, newVersion: String): Boolean {
+        // 处理空字符串情况
+        if (oldVersion.isEmpty() && newVersion.isEmpty()) return false
+        if (oldVersion.isEmpty()) return false
+        if (newVersion.isEmpty()) return false
+
+        // 按 "." 分割版本号
+        val oldParts = oldVersion.split(".")
+        val newParts = newVersion.split(".")
+
+        // 取最大长度，确保比较所有部分
+        val maxLength = maxOf(oldParts.size, newParts.size)
+
+        for (i in 0 until maxLength) {
+            // 获取当前部分的数字，如果缺失则默认为 0
+            val oldNum = oldParts.getOrNull(i)?.toIntOrNull() ?: 0
+            val newNum = newParts.getOrNull(i)?.toIntOrNull() ?: 0
+
+            when {
+                newNum > oldNum -> return true  // 新版本更大
+                newNum < oldNum -> return false // 新版本更小
+                // 相等则继续比较下一部分
+            }
+        }
+
+        return false // 所有部分都相等
     }
 }

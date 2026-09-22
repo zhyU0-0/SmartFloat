@@ -12,8 +12,8 @@ android {
         applicationId = "com.zyy.smartfloat"
         minSdk = 29
         targetSdk = 36
-        versionCode = 1
-        versionName = "2.1"
+        versionCode = 2
+        versionName = "2.2.1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -38,6 +38,13 @@ android {
     }
     buildFeatures {
         compose = true
+    }
+    applicationVariants.all { variant ->
+        variant.outputs.all { output ->
+            val implOutput = this as com.android.build.gradle.internal.api.BaseVariantOutputImpl
+            implOutput.outputFileName = "${variant.versionName}.apk"
+            true
+        }
     }
 }
 

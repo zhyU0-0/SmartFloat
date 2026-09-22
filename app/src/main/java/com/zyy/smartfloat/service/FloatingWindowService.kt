@@ -817,7 +817,13 @@ class FloatingWindowService : Service() {
 
                     val answer = response.choices.firstOrNull()?.message?.content ?: "返回：null"
                     Log.d(TAG, "LLM response: $answer")
-                    val llmResponse = gson.fromJson(answer, LLmResponse::class.java)
+                    // 处理部分API对content的双重JSON编码：answer可能以"开头
+                    val cleanAnswer = if (answer.trimStart().startsWith("\"")) {
+                        gson.fromJson(answer, String::class.java) ?: answer
+                    } else {
+                        answer
+                    }
+                    val llmResponse = gson.fromJson(cleanAnswer, LLmResponse::class.java)
 
                     val inputToken = response.usage?.prompt_tokens ?: 0
                     val outputToken = response.usage?.completion_tokens ?: 0
