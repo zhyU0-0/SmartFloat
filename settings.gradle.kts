@@ -21,4 +21,5 @@ dependencyResolutionManagement {
 
 rootProject.name = "SmartFloat"
 include(":app")
+include( ":unityLibrary")
  

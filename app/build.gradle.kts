@@ -16,6 +16,12 @@ android {
         versionName = "2.2.1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
+        // unityLibrary 现在只导出 arm64-v8a（IL2CPP）的 libmain.so/libunity.so，
+        // 必须与之一致，否则会被 abiFilters 过滤掉导致 Failed to load libmain.so
+        ndk {
+            abiFilters += "arm64-v8a"
+        }
     }
 
     buildTypes {
@@ -70,6 +76,8 @@ dependencies {
     implementation(libs.coroutines.android)
     implementation(libs.androidx.compose.foundation.layout)
     implementation(libs.androidx.ui.graphics)
+    implementation(libs.androidx.activity)
+    implementation(libs.androidx.constraintlayout)
     testImplementation(libs.junit)
     implementation("com.google.mlkit:text-recognition-chinese:16.0.0")
     implementation("com.google.mlkit:text-recognition:16.0.0")
@@ -79,4 +87,5 @@ dependencies {
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)
     debugImplementation(libs.androidx.compose.ui.tooling)
     debugImplementation(libs.androidx.compose.ui.test.manifest)
+    implementation(project(":unityLibrary"))
 }

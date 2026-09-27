@@ -786,7 +786,9 @@ fun FloatingButtonScreen(
                 // 设置按钮
                 Button(
                     onClick = {
-                        val intent = Intent(context, SettingsActivity::class.java)
+//                        val intent = Intent(context, SettingsActivity::class.java)
+//                        context.startActivity(intent)
+                        val intent = Intent(context, MyUnityActivity::class.java)
                         context.startActivity(intent)
                     },
                     modifier = Modifier
@@ -810,7 +812,7 @@ fun FloatingButtonScreen(
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
-                            text = "设置",
+                            text = "unity",
                             color = Color.White,
                             fontSize = 14.sp,
                             fontWeight = FontWeight.Medium

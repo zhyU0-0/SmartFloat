@@ -1,0 +1,52 @@
+{
+    "logs": [
+        {
+            "outputFile": "com.unity3d.player.unityLibrary-mergeReleaseResources-1:/values-v21/values-v21.xml",
+            "map": [
+                {
+                    "source": "D:\\Android\\SmartFloat\\unityLibrary\\src\\main\\res\\values-v21\\styles.xml",
+                    "from": {
+                        "startLines": "2",
+                        "startColumns": "0",
+                        "startOffsets": "51",
+                        "endLines": "3",
+                        "endColumns": "8",
+                        "endOffsets": "150"
+                    },
+                    "to": {
+                        "startLines": "2",
+                        "startColumns": "4",
+                        "startOffsets": "55",
+                        "endLines": "3",
+                        "endColumns": "8",
+                        "endOffsets": "154"
+                    }
+                }
+            ]
+        },
+        {
+            "outputFile": "com.unity3d.player.unityLibrary-release-3:/values-v21/values-v21.xml",
+            "map": [
+                {
+                    "source": "D:\\Android\\SmartFloat\\unityLibrary\\src\\main\\res\\values-v21\\styles.xml",
+                    "from": {
+                        "startLines": "2",
+                        "startColumns": "0",
+                        "startOffsets": "51",
+                        "endLines": "3",
+                        "endColumns": "8",
+                        "endOffsets": "150"
+                    },
+                    "to": {
+                        "startLines": "2",
+                        "startColumns": "4",
+                        "startOffsets": "55",
+                        "endLines": "3",
+                        "endColumns": "8",
+                        "endOffsets": "154"
+                    }
+                }
+            ]
+        }
+    ]
+}
