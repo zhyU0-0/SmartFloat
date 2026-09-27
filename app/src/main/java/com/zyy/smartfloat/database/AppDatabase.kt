@@ -37,6 +37,16 @@ class AppDatabase(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME, n
         private const val COL_MODEL_ID_FK = "modelId"
         private const val COL_CONV_CREATED_AT = "createdAt"
 
+        // Skill 表
+        private const val TABLE_SKILL = "skills"
+        private const val COL_SKILL_ID = "id"
+        private const val COL_SKILL_NAME = "skillsName"
+        private const val COL_SKILL_CONTENT = "content"
+        private const val COL_SKILL_CLICKING_TIPS = "clickingTips"
+        private const val COL_SKILL_IS_ACTIVE = "isActive"
+        private const val COL_SKILL_CREATED_AT = "createdAt"
+
+
         @Volatile
         private var INSTANCE: AppDatabase? = null
 
@@ -76,14 +86,35 @@ class AppDatabase(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME, n
             )
         """.trimIndent()
 
+        val createSkills = """
+            CREATE TABLE IF NOT EXISTS $TABLE_SKILL (
+                $COL_SKILL_ID INTEGER PRIMARY KEY AUTOINCREMENT,
+                $COL_SKILL_NAME TEXT NOT NULL,
+                $COL_SKILL_CONTENT TEXT,
+                $COL_SKILL_CLICKING_TIPS TEXT,
+                $COL_SKILL_IS_ACTIVE INTEGER NOT NULL DEFAULT 0,
+                $COL_SKILL_CREATED_AT INTEGER NOT NULL
+            )""".trimIndent()
+
         db.execSQL(createModelConfig)
         db.execSQL(createConversation)
+        db.execSQL(createSkills)
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
-        if (oldVersion < 2) {
+        if (oldVersion < 3) {
             // 添加 baseUrl 列
             db.execSQL("ALTER TABLE $TABLE_MODEL_CONFIG ADD COLUMN $COL_BASE_URL TEXT")
+            db.execSQL("""
+            CREATE TABLE IF NOT EXISTS $TABLE_SKILL (
+                $COL_SKILL_ID INTEGER PRIMARY KEY AUTOINCREMENT,
+                $COL_SKILL_NAME TEXT NOT NULL,
+                $COL_SKILL_CONTENT TEXT,
+                $COL_SKILL_CLICKING_TIPS TEXT,
+                $COL_SKILL_IS_ACTIVE INTEGER NOT NULL DEFAULT 0,
+                $COL_SKILL_CREATED_AT INTEGER NOT NULL
+            )"""
+            )
         }
     }
 
@@ -171,7 +202,7 @@ class AppDatabase(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME, n
                     id = cursor.getLong(cursor.getColumnIndexOrThrow(COL_MODEL_ID)),
                     modelName = cursor.getString(cursor.getColumnIndexOrThrow(COL_MODEL_NAME)),
                     apiKey = cursor.getString(cursor.getColumnIndexOrThrow(COL_API_KEY)),
-                    baseUrl = cursor.getString(cursor.getColumnIndex(COL_BASE_URL)),
+                    baseUrl = cursor.getString(cursor.getColumnIndexOrThrow(COL_BASE_URL)),
                     isActive = cursor.getInt(cursor.getColumnIndexOrThrow(COL_IS_ACTIVE)) == 1,
                     createdAt = cursor.getLong(cursor.getColumnIndexOrThrow(COL_CREATED_AT))
                 )
@@ -181,6 +212,98 @@ class AppDatabase(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME, n
         return list
     }
 
+    fun insertSkill(skill: Skills): Long {
+        Log.d("Skills","insert")
+        val db = writableDatabase
+        val values = ContentValues().apply {
+            put(COL_SKILL_NAME, skill.skillsName)
+            put(COL_SKILL_CONTENT, skill.content)
+            put(COL_SKILL_CLICKING_TIPS, skill.clickingTips)
+            put(COL_SKILL_IS_ACTIVE, if (skill.isActive) 1 else 0)
+            put(COL_SKILL_CREATED_AT, skill.createdAt)
+        }
+        return db.insert(TABLE_SKILL, null, values)
+    }
+
+    fun updateSkill(skill: Skills): Int {
+        val db = writableDatabase
+        val values = ContentValues().apply {
+            put(COL_SKILL_NAME, skill.skillsName)
+            put(COL_SKILL_CONTENT, skill.content)
+            put(COL_SKILL_CLICKING_TIPS, skill.clickingTips)
+            put(COL_SKILL_IS_ACTIVE, if (skill.isActive) 1 else 0)
+        }
+        return db.update(TABLE_SKILL, values, "$COL_SKILL_ID = ?", arrayOf(skill.id.toString()))
+    }
+
+    fun deleteSkill(skill: Skills): Int {
+        val db = writableDatabase
+        return db.delete(TABLE_SKILL, "$COL_SKILL_ID = ?", arrayOf(skill.id.toString()))
+    }
+
+    fun setActiveSkill(skillId: Long) {
+        val db = writableDatabase
+        // 先将所有 Skill 设置为非活跃
+        val deactivateValues = ContentValues().apply {
+            put(COL_SKILL_IS_ACTIVE, 0)
+        }
+        db.update(TABLE_SKILL, deactivateValues, null, null)
+
+        // 然后将指定 Skill 设置为活跃
+        val activateValues = ContentValues().apply {
+            put(COL_SKILL_IS_ACTIVE, 1)
+        }
+        db.update(TABLE_SKILL, activateValues, "$COL_SKILL_ID = ?", arrayOf(skillId.toString()))
+    }
+
+    fun getAllSkills(): List<Skills> {
+        val db = readableDatabase
+        val cursor = db.query(
+            TABLE_SKILL, null, null, null, null, null,
+            "$COL_SKILL_CREATED_AT DESC"
+        )
+        return cursorToSkillList(cursor)
+    }
+
+    fun getActiveSkill(): Skills? {
+        val db = readableDatabase
+        val cursor = db.query(
+            TABLE_SKILL, null,
+            "$COL_SKILL_IS_ACTIVE = ?", arrayOf("1"),
+            null, null, null, "1"
+        )
+        val list = cursorToSkillList(cursor)
+        return list.firstOrNull()
+    }
+
+    fun getSkillById(id: Long): Skills? {
+        val db = readableDatabase
+        val cursor = db.query(
+            TABLE_SKILL, null,
+            "$COL_SKILL_ID = ?", arrayOf(id.toString()),
+            null, null, null, "1"
+        )
+        val list = cursorToSkillList(cursor)
+        return list.firstOrNull()
+    }
+
+    private fun cursorToSkillList(cursor: Cursor): List<Skills> {
+        val list = mutableListOf<Skills>()
+        while (cursor.moveToNext()) {
+            list.add(
+                Skills(
+                    id = cursor.getLong(cursor.getColumnIndexOrThrow(COL_SKILL_ID)),
+                    skillsName = cursor.getString(cursor.getColumnIndexOrThrow(COL_SKILL_NAME)),
+                    content = cursor.getString(cursor.getColumnIndexOrThrow(COL_SKILL_CONTENT)),
+                    clickingTips = cursor.getString(cursor.getColumnIndexOrThrow(COL_SKILL_CLICKING_TIPS)),
+                    isActive = cursor.getInt(cursor.getColumnIndexOrThrow(COL_SKILL_IS_ACTIVE)) != 0,
+                    createdAt = cursor.getLong(cursor.getColumnIndexOrThrow(COL_SKILL_CREATED_AT))
+                )
+            )
+        }
+        cursor.close()
+        return list
+    }
     // ==================== Conversation 操作 ====================
 
     fun insertConversation(conversation: Conversation): Long {

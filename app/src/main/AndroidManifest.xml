@@ -42,6 +42,9 @@
         <activity
             android:name=".SettingsActivity"
             android:exported="false" />
+        <activity
+            android:name=".SkillsManagerActivity"
+            android:exported="false" />
         <service
             android:name=".service.FloatingWindowService"
             android:exported="false"

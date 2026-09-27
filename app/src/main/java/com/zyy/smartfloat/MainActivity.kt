@@ -1,10 +1,8 @@
 package com.zyy.smartfloat
 // 添加 CircleShape 导入
-import androidx.compose.foundation.shape.CircleShape
 import android.Manifest
 import android.accessibilityservice.AccessibilityServiceInfo
 import android.app.Activity
-import android.app.Application
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -43,6 +41,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -67,8 +66,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
@@ -81,13 +78,16 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
+import androidx.core.content.ContextCompat.startActivity
 import androidx.core.content.FileProvider
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.unity3d.player.UnityPlayerActivity
 import com.zyy.smartfloat.database.InstructionRecord
 import com.zyy.smartfloat.service.FloatingWindowService
+import com.zyy.smartfloat.unity.MyUnityActivity
 import com.zyy.smartfloat.utils.VoiceRecognizer
 import com.zyy.smartfloat.viewmodel.MainViewModel
 
@@ -647,7 +647,9 @@ fun FloatingButtonScreen(
                         val intent = Intent(context, StatisticsActivity::class.java)
                         context.startActivity(intent)
                     },
-                    modifier = Modifier.weight(1f).height(48.dp),
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(48.dp),
                     colors = ButtonDefaults.buttonColors(
                         containerColor = Color(0xFF0052D4)
                     ),
@@ -680,7 +682,10 @@ fun FloatingButtonScreen(
                         val intent = Intent(context, ModelManagerActivity::class.java)
                         context.startActivity(intent)
                     },
-                    modifier = Modifier.weight(1f).height(48.dp).padding(0.dp),
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(48.dp)
+                        .padding(0.dp),
                     colors = ButtonDefaults.buttonColors(
                         containerColor = Color(0xFF4361EE)
                     ),
@@ -707,6 +712,76 @@ fun FloatingButtonScreen(
                         )
                     }
                 }
+                Button(
+                    onClick = {
+                        val intent = Intent(context, SkillsManagerActivity::class.java)
+                        context.startActivity(intent)
+                    },
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(48.dp)
+                        .padding(0.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Color(0xFF4361EE)
+                    ),
+                    shape = RoundedCornerShape(12.dp),
+                    contentPadding = PaddingValues(0.dp)  // 移除默认内边距
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Start,
+                        modifier = Modifier.padding(0.dp)
+                    ) {
+                        Image(
+                            painter = painterResource(id = R.drawable.ic_model),//ModelTraining
+                            contentDescription = null,
+                            colorFilter = ColorFilter.tint(Color.White),  // 着色
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "Skills",
+                            color = Color.White,
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
+                }
+                Button(
+                    onClick = {
+                        val intent = Intent(context, SettingsActivity::class.java)
+                        context.startActivity(intent)
+                    },
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(48.dp)
+                        .padding(0.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Color(0xFF4361EE)
+                    ),
+                    shape = RoundedCornerShape(12.dp),
+                    contentPadding = PaddingValues(0.dp)  // 移除默认内边距
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Start,
+                        modifier = Modifier.padding(0.dp)
+                    ) {
+                        Image(
+                            painter = painterResource(id = R.drawable.ic_model),//ModelTraining
+                            contentDescription = null,
+                            colorFilter = ColorFilter.tint(Color.White),  // 着色
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "设置",
+                            color = Color.White,
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
+                }
 
                 // 设置按钮
                 Button(
@@ -714,7 +789,9 @@ fun FloatingButtonScreen(
                         val intent = Intent(context, SettingsActivity::class.java)
                         context.startActivity(intent)
                     },
-                    modifier = Modifier.weight(1f).height(48.dp),
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(48.dp),
                     colors = ButtonDefaults.buttonColors(
                         containerColor = Color(0xFF7209B7)
                     ),

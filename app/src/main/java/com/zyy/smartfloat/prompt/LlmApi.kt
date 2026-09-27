@@ -2,7 +2,7 @@ package com.zyy.smartfloat.prompt
 
 import android.content.Context
 import com.zyy.smartfloat.R
-
+import com.zyy.smartfloat.database.OutputSkills
 
 
 data class LLmResponse(
@@ -20,6 +20,7 @@ data class TapPoints(
 data class LLmBody(
     val a_prompt: String,
     val b_question: String,
+    val b_skills: OutputSkills? = null,
     val c_maxX: Int,
     val c_maxY: Int,
     val d_history: List<ProcessHistory>,
@@ -41,7 +42,7 @@ fun buildLlmPrompt(context: Context, tapPointsExample: String): String {
 }
 
 fun buildLlmPrompt_image(context: Context, tapPointsExample: String): String {
-    val rawResId = R.raw.llm_prompt
+    val rawResId = R.raw.llm_prompt_image
     val template = context.resources.openRawResource(rawResId)
         .bufferedReader()
         .use { it.readText() }

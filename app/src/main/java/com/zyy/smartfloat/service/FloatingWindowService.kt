@@ -59,6 +59,7 @@ import com.zyy.smartfloat.prompt.LLmResponse
 import com.zyy.smartfloat.prompt.ProcessHistory
 import com.zyy.smartfloat.prompt.TapPoints
 import com.zyy.smartfloat.prompt.buildLlmPrompt
+import com.zyy.smartfloat.prompt.buildLlmPrompt_image
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -754,10 +755,16 @@ class FloatingWindowService : Service() {
                 val json = gson.toJson(lLmResponseExample)
                 val llmPrompt =
                     if(isEnableImage)
-                        buildLlmPrompt(this@FloatingWindowService, json)
+                        buildLlmPrompt_image(this@FloatingWindowService, json)
                     else
                         buildLlmPrompt(this@FloatingWindowService, json)
-                val llmBody = LLmBody(llmPrompt, question, screenWidth, screenHeight, history, "")
+                val activeSkills = MyApp.Companion.repository.getActiveOutputSkillSync()
+                val llmBody:LLmBody;
+                if(activeSkills.skillsName != ""){
+                    llmBody = LLmBody(llmPrompt, question, activeSkills,screenWidth, screenHeight, history, "")
+                }else{
+                    llmBody = LLmBody(a_prompt = llmPrompt, b_question = question, c_maxX = screenWidth, c_maxY = screenHeight, d_history = history, z_content = "")
+                }
 
                 try {
                     val startTime = System.currentTimeMillis()

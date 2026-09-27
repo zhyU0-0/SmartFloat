@@ -1,5 +1,6 @@
 package com.zyy.smartfloat.database
 
+import android.util.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -14,6 +15,13 @@ class AppRepository(private val database: AppDatabase) {
 
     private val _activeModel = MutableStateFlow<ModelConfig?>(null)
     val activeModel: Flow<ModelConfig?> = _activeModel.asStateFlow()
+
+    //Skills
+    private val _allSkills = MutableStateFlow<List<Skills>>(emptyList())
+    val allSkills: Flow<List<Skills>> = _allSkills.asStateFlow()
+
+    private val _activeSkills = MutableStateFlow<Skills?>(null)
+    val activeSkills: Flow<Skills?> = _activeSkills.asStateFlow()
 
     // Conversation
     private val _allConversations = MutableStateFlow<List<Conversation>>(emptyList())
@@ -31,6 +39,8 @@ class AppRepository(private val database: AppDatabase) {
     suspend fun refreshData() = withContext(Dispatchers.IO) {
         _allModels.value = database.getAllModels()
         _activeModel.value = database.getActiveModel()
+        _allSkills.value = database.getAllSkills()
+        _activeSkills.value = database.getActiveSkill()
         _allConversations.value = database.getAllConversations()
         _dailyTokenUsage.value = database.getDailyTokenUsage()
         _tokenUsageByModel.value = database.getTokenUsageByModel()
@@ -61,6 +71,40 @@ class AppRepository(private val database: AppDatabase) {
 
     fun getActiveModelSync(): ModelConfig? {
         return database.getActiveModel()
+    }
+
+    // Skills 操作
+    suspend fun insertSkill(skill: Skills): Long = withContext(Dispatchers.IO) {
+        val id = database.insertSkill(skill)
+        refreshData()
+        id
+    }
+
+    suspend fun updateSkill(skill: Skills) = withContext(Dispatchers.IO) {
+        database.updateSkill(skill)
+        refreshData()
+    }
+
+    suspend fun deleteSkill(skill: Skills) = withContext(Dispatchers.IO) {
+        database.deleteSkill(skill)
+        refreshData()
+    }
+
+    suspend fun setActiveSkill(skillId: Long) = withContext(Dispatchers.IO) {
+        database.setActiveSkill(skillId)
+        refreshData()
+    }
+
+    fun getActiveSkillSync(): Skills? {
+        return database.getActiveSkill()
+    }
+    fun getActiveOutputSkillSync(): OutputSkills {
+        val out: Skills? = database.getActiveSkill();
+        if(out == null) {
+            Log.d("Skills" ,"database.getActiveSkill() is null")
+            return OutputSkills("","","");
+        }
+        return OutputSkills(out.skillsName,out.content.toString(),out.clickingTips.toString());
     }
 
     // Conversation 操作
