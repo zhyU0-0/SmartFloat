@@ -4,12 +4,8 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.media.Image
-import android.os.Bundle
 import android.util.Log
 import android.widget.Toast
-import androidx.activity.ComponentActivity
-import androidx.activity.compose.setContent
-import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.lazy.LazyColumn
@@ -27,24 +23,9 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.google.gson.Gson
 import com.zyy.smartfloat.database.AddModel
 import com.zyy.smartfloat.database.ModelConfig
-import com.zyy.smartfloat.ui.theme.SmartFloatTheme
 import com.zyy.smartfloat.viewmodel.ModelManagerViewModel
 import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.res.painterResource
-
-class ModelManagerActivity : ComponentActivity() {
-    override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
-        enableEdgeToEdge()
-        setContent {
-            SmartFloatTheme {
-                Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
-                    ModelManagerScreen(modifier = Modifier.padding(innerPadding))
-                }
-            }
-        }
-    }
-}
 
 @Composable
 fun ModelManagerScreen(

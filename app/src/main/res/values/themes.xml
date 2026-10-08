@@ -13,4 +13,7 @@
         <item name="android:statusBarColor">?attr/colorPrimaryVariant</item>
         <!-- Customize your theme here. -->
     </style>
+
+    <!-- Unity 页面：无标题栏，让画面铺满整个屏幕 -->
+    <style name="Theme.SmartFloat.Unity" parent="Theme.MaterialComponents.DayNight.NoActionBar" />
 </resources>

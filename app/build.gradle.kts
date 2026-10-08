@@ -56,6 +56,7 @@ android {
 
 dependencies {
     implementation(files("libs/asr-one-sentence-release.aar"))
+    implementation(files("libs/unityLibrary-release.aar"))
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.appcompat)
     implementation("androidx.localbroadcastmanager:localbroadcastmanager:1.0.0")
@@ -87,5 +88,5 @@ dependencies {
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)
     debugImplementation(libs.androidx.compose.ui.tooling)
     debugImplementation(libs.androidx.compose.ui.test.manifest)
-    implementation(project(":unityLibrary"))
+    debugImplementation(libs.androidx.compose.ui.test.manifest)
 }

@@ -1,8 +1,0 @@
-com.unity3d.player.unityLibrary-pngs-0 D:\Android\SmartFloat\unityLibrary\build\generated\res\pngs\release
-com.unity3d.player.unityLibrary-resValues-1 D:\Android\SmartFloat\unityLibrary\build\generated\res\resValues\release
-com.unity3d.player.unityLibrary-updated_navigation_xml-2 D:\Android\SmartFloat\unityLibrary\build\generated\updated_navigation_xml\release
-com.unity3d.player.unityLibrary-mergeReleaseResources-3 D:\Android\SmartFloat\unityLibrary\build\intermediates\incremental\release\mergeReleaseResources\merged.dir
-com.unity3d.player.unityLibrary-mergeReleaseResources-4 D:\Android\SmartFloat\unityLibrary\build\intermediates\incremental\release\mergeReleaseResources\stripped.dir
-com.unity3d.player.unityLibrary-release-5 D:\Android\SmartFloat\unityLibrary\build\intermediates\merged_res\release\mergeReleaseResources
-com.unity3d.player.unityLibrary-main-6 D:\Android\SmartFloat\unityLibrary\src\main\res
-com.unity3d.player.unityLibrary-release-7 D:\Android\SmartFloat\unityLibrary\src\release\res

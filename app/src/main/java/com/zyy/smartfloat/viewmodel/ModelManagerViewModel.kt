@@ -3,6 +3,9 @@ package com.zyy.smartfloat.viewmodel
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import android.os.Handler
+import android.os.Looper
+import android.os.Message
 import android.util.Log
 import android.widget.Toast
 import androidx.lifecycle.ViewModel
@@ -54,6 +57,28 @@ class ModelManagerViewModel : ViewModel() {
         viewModelScope.launch {
             repository.setActiveModel(modelId)
         }
+    }
+
+    fun tryHandler(){
+        var han: Handler? = null
+        Thread {
+            println("子线程执行")
+            Looper.prepare()
+            val mHandler = Handler(Looper.myLooper()!!){meg->
+                when (meg.what) {
+                    1 -> println("收到消息 1")
+                }
+                true
+            }
+            han = mHandler
+
+            Looper.loop()//阻塞
+        }.start()
+        han?.sendMessage(Message.obtain().apply { what = 1 });
+        han?.post {
+            print("使用子线程handler发送代码")
+        }
+
     }
 
     fun deleteModel(model: ModelConfig) {

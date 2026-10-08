@@ -43,7 +43,7 @@ import com.google.mlkit.vision.text.Text
 import com.google.mlkit.vision.text.TextRecognition
 import com.google.mlkit.vision.text.chinese.ChineseTextRecognizerOptions
 import com.google.mlkit.vision.text.latin.TextRecognizerOptions
-import com.zyy.smartfloat.MainActivity
+import com.zyy.smartfloat.NavActivity
 import com.zyy.smartfloat.MyApp
 import com.zyy.smartfloat.R
 import com.zyy.smartfloat.database.AppDatabase
@@ -253,7 +253,7 @@ class FloatingWindowService : Service() {
 
     private fun createNotification(): Notification {
         val pendingIntent = PendingIntent.getActivity(
-            this, 0, Intent(this, MainActivity::class.java),
+            this, 0, Intent(this, NavActivity::class.java),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
         val stopIntent = PendingIntent.getService(

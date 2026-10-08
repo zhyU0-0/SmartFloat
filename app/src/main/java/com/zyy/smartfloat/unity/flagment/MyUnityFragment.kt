@@ -5,9 +5,8 @@ import androidx.fragment.app.Fragment
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
-import com.zyy.smartfloat.R
 import com.unity3d.player.UnityPlayer
-
+import com.zyy.smartfloat.R
 
 /**
  * A simple [Fragment] subclass.

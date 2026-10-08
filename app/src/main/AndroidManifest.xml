@@ -24,9 +24,13 @@
         <activity
             android:name=".unity.MyUnityActivity"
             android:process=":unity"
-            android:exported="false" />
+            android:exported="true"
+            android:label="@string/title_activity_main"
+            android:launchMode="singleTask"
+            android:theme="@style/Theme.SmartFloat.Unity"/>
+
         <activity
-            android:name=".MainActivity"
+            android:name=".NavActivity"
             android:exported="true"
             android:label="@string/title_activity_main"
             android:launchMode="singleTask"
@@ -37,18 +41,6 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
-        <activity
-            android:name=".StatisticsActivity"
-            android:exported="false" />
-        <activity
-            android:name=".ModelManagerActivity"
-            android:exported="false" />
-        <activity
-            android:name=".SettingsActivity"
-            android:exported="false" />
-        <activity
-            android:name=".SkillsManagerActivity"
-            android:exported="false" />
         <service
             android:name=".service.FloatingWindowService"
             android:exported="false"

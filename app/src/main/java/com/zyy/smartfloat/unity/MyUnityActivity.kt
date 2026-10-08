@@ -7,12 +7,14 @@ import android.content.IntentFilter
 import android.os.Build
 import android.os.Bundle
 import android.util.Log
+import android.view.WindowManager
 import android.widget.Button
 import android.widget.TextView
 import androidx.activity.enableEdgeToEdge
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import androidx.fragment.app.FragmentManager
 import com.unity3d.player.UnityPlayer
 import com.zyy.smartfloat.R
@@ -46,6 +48,28 @@ class MyUnityActivity : AppCompatActivity() {
                 .replace(R.id.unity_view, MyUnityFragment())
                 .commit()
         }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // UnityPlayer 在 resume 时会重新隐藏状态栏，post 到其设置完之后再把状态栏显示回来
+        window.decorView.post { showSystemStatusBar() }
+    }
+
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        // 获得焦点时 Unity 可能已切到沉浸式全屏，再次纠正
+        if (hasFocus) window.decorView.post { showSystemStatusBar() }
+    }
+
+    /**
+     * 强制显示系统状态栏：清掉全屏 Flag + 通过 WindowInsetsController 显示 statusBars。
+     * 状态栏恢复后系统会重新分发带 top 高度的 WindowInsets，根布局的 padding 才会生效。
+     */
+    private fun showSystemStatusBar() {
+        window.clearFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN)
+        WindowInsetsControllerCompat(window, window.decorView)
+            .show(WindowInsetsCompat.Type.statusBars())
     }
 
     fun receiverView(){
