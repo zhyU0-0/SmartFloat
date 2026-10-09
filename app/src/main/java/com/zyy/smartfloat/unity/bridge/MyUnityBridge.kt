@@ -5,6 +5,7 @@ import android.content.Intent
 
 object MyUnityBridge {
     private var context: Context? = null
+    val UnityAction = "Unity"
 
     fun setContext(context: Context) {
         this.context = context.applicationContext  // 用 ApplicationContext 避免泄漏
@@ -22,7 +23,7 @@ object MyUnityBridge {
             return
         }
         val intent = Intent("com.zyy.smartfloat.UNITY_EVENT").apply {
-            putExtra("action", "TEST")
+            putExtra("action", UnityAction)
             putExtra("data", data)
             setPackage(ctx.packageName)
         }
@@ -31,6 +32,12 @@ object MyUnityBridge {
 
     @JvmStatic
     fun onGameFinished(result: String) {
+        println("Unity 通知: $result")
+        sendToNative(result)
+    }
+
+    @JvmStatic
+    fun onToLable(result: String) {
         println("Unity 通知: $result")
         sendToNative(result)
     }

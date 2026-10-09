@@ -1,7 +1,11 @@
 package com.zyy.smartfloat
 
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
+import android.os.Build
 import android.os.Bundle
-import android.util.Log
 import android.view.View
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -21,6 +25,7 @@ import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -36,7 +41,9 @@ import androidx.fragment.app.FragmentActivity
 import androidx.fragment.app.FragmentContainerView
 import androidx.lifecycle.ViewModelProvider
 import com.zyy.smartfloat.ui.theme.SmartFloatTheme
+import com.zyy.smartfloat.unity.bridge.MyUnityBridge
 import com.zyy.smartfloat.unity.flagment.MyUnityFragment
+import com.zyy.smartfloat.unity.viewModel.UnityViewModel
 import com.zyy.smartfloat.viewmodel.MainViewModel
 import com.zyy.smartfloat.viewmodel.SettingsViewModel
 
@@ -44,11 +51,11 @@ import com.zyy.smartfloat.viewmodel.SettingsViewModel
  * 底部导航的各个页面。顺序即底栏展示顺序。
  */
 enum class NavPage(val label: String, val iconRes: Int) {
-    HOME("首页", R.drawable.ic_app),
-    MODEL("模型", R.drawable.ic_model),
-    SKILL("技能", R.drawable.ic_complete),
-    STATISTICS("统计", R.drawable.ic_analytics),
-    SETTINGS("设置", R.drawable.ic_setting)
+    HOME("home", R.drawable.ic_app),
+    MODEL("model", R.drawable.ic_model),
+    SKILL("skills", R.drawable.ic_complete),
+    STATISTICS("statistics", R.drawable.ic_analytics),
+    SETTINGS("setting", R.drawable.ic_setting)
 }
 
 /**
@@ -59,6 +66,7 @@ class NavActivity : FragmentActivity() {
 
     private lateinit var mainViewModel: MainViewModel
     private lateinit var settingsViewModel: SettingsViewModel
+    private lateinit var unityViewModel: UnityViewModel
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -66,6 +74,11 @@ class NavActivity : FragmentActivity() {
 
         mainViewModel = ViewModelProvider(this)[MainViewModel::class.java]
         mainViewModel.init(applicationContext)
+
+        //注册广播接收Unity消息
+        unityViewModel = ViewModelProvider(this)[UnityViewModel::class.java]
+        MyUnityBridge.setContext(applicationContext)
+        receiverBroadcast()
 
         // SettingsScreen 依赖 SharedPreferences，必须先 init
         settingsViewModel = ViewModelProvider(this)[SettingsViewModel::class.java]
@@ -75,20 +88,42 @@ class NavActivity : FragmentActivity() {
             SmartFloatTheme {
                 NavScreen(
                     mainViewModel = mainViewModel,
-                    settingsViewModel = settingsViewModel
+                    settingsViewModel = settingsViewModel,
+                    unityViewModel = unityViewModel
                 )
             }
         }
+    }
+
+    fun receiverBroadcast(){
+        unityViewModel.unityReceiver = object : BroadcastReceiver() {
+            override fun onReceive(context: Context, intent: Intent) {
+                unityViewModel.processUnityBroadcast(intent)
+            }
+        }
+        val filter = IntentFilter("com.zyy.smartfloat.UNITY_EVENT")
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            // Android 13+，必须显式指定
+            registerReceiver(unityViewModel.unityReceiver, filter, RECEIVER_NOT_EXPORTED)
+        }
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        MyUnityBridge.onDestroy();
+        unregisterReceiver(unityViewModel.unityReceiver);
     }
 }
 
 @Composable
 fun NavScreen(
     mainViewModel: MainViewModel,
-    settingsViewModel: SettingsViewModel
+    settingsViewModel: SettingsViewModel,
+    unityViewModel: UnityViewModel
 ) {
     val pages = NavPage.values()
-    var selectedIndex by rememberSaveable { mutableStateOf(NavPage.HOME.ordinal) }
+    val selectedIndex by unityViewModel.selectedIndex.collectAsState()
     val context = LocalContext.current
 
     Box(modifier = Modifier.fillMaxSize()) {
@@ -103,7 +138,7 @@ fun NavScreen(
                                 pages.forEachIndexed { index, page ->
                                     NavigationBarItem(
                                         selected = selectedIndex == index,
-                                        onClick = { selectedIndex = index },
+                                        onClick = { unityViewModel.setSelectedIndex(index) },
                                         icon = {
                                             Icon(
                                                 painter = painterResource(id = page.iconRes),
@@ -138,11 +173,11 @@ fun NavScreen(
                                                 .commit()
                                         }
                                     }
+                                    // 触摸事件已在 MyUnityFragment 内部直接拦截 UnityPlayer 的 View
                                 }
                             )
                         }
                     }
-
                 }
             ) { innerPadding ->
                 Box(
@@ -156,7 +191,7 @@ fun NavScreen(
                         NavPage.HOME -> MainScreen(
                             viewModel = mainViewModel,
                             // 首页里的「统计/模型/技能/设置」按钮直接切到对应 tab
-                            onNavigate = { selectedIndex = it.ordinal }
+                            onNavigate = { unityViewModel.setSelectedIndex(it.ordinal)}
                         )
                         NavPage.MODEL -> ModelManagerScreen()
                         NavPage.SKILL -> SkillsManagerScreen()
@@ -166,7 +201,5 @@ fun NavScreen(
                 }
             }
         }
-        // 右侧：Unity Fragment，固定 200dp 宽，与左侧导航/内容并排，底部导航栏不覆盖此区域
-
     }
 }
