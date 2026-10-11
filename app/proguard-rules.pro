@@ -52,3 +52,6 @@
 
 # 腾讯云 ASR
 -keep class com.tencent.asr.** { *; }
+
+# Unity Bridge：Unity 侧通过 AndroidJavaClass 按全限定名字符串反射调用，类名/包名/方法名都不能混淆
+-keep class com.zyy.smartfloat.unity.bridge.** { *; }
