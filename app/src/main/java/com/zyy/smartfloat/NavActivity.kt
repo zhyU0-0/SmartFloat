@@ -9,33 +9,51 @@ import android.os.Bundle
 import android.view.View
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.ripple
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.fragment.app.FragmentActivity
 import androidx.fragment.app.FragmentContainerView
@@ -53,7 +71,7 @@ import com.zyy.smartfloat.viewmodel.SettingsViewModel
 enum class NavPage(val label: String, val iconRes: Int) {
     HOME("home", R.drawable.ic_app),
     MODEL("model", R.drawable.ic_model),
-    SKILL("skills", R.drawable.ic_complete),
+    SKILL("skills", R.drawable.ic_skills),
     STATISTICS("statistics", R.drawable.ic_analytics),
     SETTINGS("setting", R.drawable.ic_setting)
 }
@@ -127,79 +145,154 @@ fun NavScreen(
     val context = LocalContext.current
 
     Box(modifier = Modifier.fillMaxSize()) {
-
-        Box{
-            Scaffold(
-                modifier = Modifier.fillMaxSize().background(color = Color.Transparent),
-                bottomBar = {
-                    Row{
-                        Box(modifier = Modifier.weight(1f)){
-                            NavigationBar {
-                                pages.forEachIndexed { index, page ->
-                                    NavigationBarItem(
-                                        selected = selectedIndex == index,
-                                        onClick = { unityViewModel.setSelectedIndex(index) },
-                                        icon = {
-                                            Icon(
-                                                painter = painterResource(id = page.iconRes),
-                                                contentDescription = page.label
-                                            )
-                                        },
-                                        label = { Text(page.label) }
-                                    )
-                                }
-                            }
-                        }
-                        Row(
-                            modifier = Modifier.width(80.dp).background(color = Color.Transparent)
-                        ){
-                            AndroidView(
-                                modifier = Modifier
-                                    .width(80.dp)
-                                    .height(80.dp)
-                                    .padding(bottom = 10.dp),
-                                factory = { ctx ->
-                                    FragmentContainerView(ctx).apply {
-                                        // 给容器一个稳定且唯一的 ID，FragmentManager 通过它查找 Fragment
-                                        id = View.generateViewId()
-                                    }
-                                },
-                                update = { view ->
-                                    val activity = context as? FragmentActivity
-                                    activity?.supportFragmentManager?.let { fm ->
-                                        if (fm.findFragmentById(view.id) == null) {
-                                            fm.beginTransaction()
-                                                .replace(view.id, MyUnityFragment())
-                                                .commit()
-                                        }
-                                    }
-                                    // 触摸事件已在 MyUnityFragment 内部直接拦截 UnityPlayer 的 View
-                                }
-                            )
-                        }
-                    }
+        Scaffold(
+            modifier = Modifier.fillMaxSize(),
+            containerColor = MaterialTheme.colorScheme.background,
+            bottomBar = {
+                // 自定义悬浮底栏
+                Row{
+                    NavBottomBar(
+                        pages = pages,
+                        selectedIndex = selectedIndex,
+                        onSelect = { unityViewModel.setSelectedIndex(it) },
+                        modifier = Modifier
+                            .weight(1f)
+                            .padding(horizontal = 12.dp, vertical = 8.dp)
+                            .navigationBarsPadding(),   // 避开系统导航栏
+                    )
+                    UnitySlot(context = context)
                 }
-            ) { innerPadding ->
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(innerPadding)
-                        // 消耗掉已处理的内边距，避免内部页面（MainScreen 自带 Scaffold）重复加系统栏间距
-                        .consumeWindowInsets(innerPadding)
-                ) {
-                    when (pages[selectedIndex]) {
-                        NavPage.HOME -> MainScreen(
-                            viewModel = mainViewModel,
-                            // 首页里的「统计/模型/技能/设置」按钮直接切到对应 tab
-                            onNavigate = { unityViewModel.setSelectedIndex(it.ordinal)}
-                        )
-                        NavPage.MODEL -> ModelManagerScreen()
-                        NavPage.SKILL -> SkillsManagerScreen()
-                        NavPage.STATISTICS -> StatisticsScreen()
-                        NavPage.SETTINGS -> SettingsScreen(viewModel = settingsViewModel)
-                    }
+
+            }
+        ) { innerPadding ->
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(innerPadding)
+                    .consumeWindowInsets(innerPadding)
+            ) {
+                when (pages[selectedIndex]) {
+                    NavPage.HOME -> MainScreen(
+                        viewModel = mainViewModel,
+                        onNavigate = { unityViewModel.setSelectedIndex(it.ordinal) }
+                    )
+                    NavPage.MODEL -> ModelManagerScreen()
+                    NavPage.SKILL -> SkillsManagerScreen()
+                    NavPage.STATISTICS -> StatisticsScreen()
+                    NavPage.SETTINGS -> SettingsScreen(viewModel = settingsViewModel)
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun NavBottomBar(
+    pages: Array<NavPage>,
+    selectedIndex: Int,
+    onSelect: (Int) -> Unit,
+    modifier: Modifier
+) {
+    Surface(
+        modifier = modifier,
+        shape = RoundedCornerShape(20.dp),
+        color = MaterialTheme.colorScheme.surface,
+        tonalElevation = 8.dp,
+        shadowElevation = 12.dp
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(64.dp)
+                .padding(horizontal = 8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            // 左侧 5 个 tab
+            Row(
+                modifier = Modifier.weight(1f),
+                horizontalArrangement = Arrangement.SpaceEvenly,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                pages.forEachIndexed { index, page ->
+                    NavTabItem(
+                        page = page,
+                        selected = selectedIndex == index,
+                        onClick = { onSelect(index) }
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun NavTabItem(
+    page: NavPage,
+    selected: Boolean,
+    onClick: () -> Unit
+) {
+    val accent = MaterialTheme.colorScheme.primary
+    val iconTint = if (selected) accent else MaterialTheme.colorScheme.onSurfaceVariant
+    val iconSize = if (selected) 24.dp else 20.dp
+    val bgColor = if (selected) accent.copy(alpha = 0.12f) else Color.Transparent
+
+    Column(
+        modifier = Modifier
+            .clip(RoundedCornerShape(16.dp))
+            .background(bgColor)
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = ripple(color = accent),
+                onClick = onClick
+            )
+            .padding(horizontal = 12.dp, vertical = 6.dp)
+            .animateContentSize(),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        Icon(
+            painter = painterResource(id = page.iconRes),
+            contentDescription = page.label,
+            tint = iconTint,
+            modifier = Modifier.size(iconSize)
+        )
+        Spacer(modifier = Modifier.height(2.dp))
+        /*Text(
+            text = page.label,
+            color = textColor,
+            fontSize = 11.sp,
+            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+            maxLines = 1
+        )*/
+    }
+}
+
+@Composable
+private fun UnitySlot(context: Context) {
+    Box(
+        modifier = Modifier
+            .size(80.dp)
+            .clip(RoundedCornerShape(14.dp))
+            .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.08f)),
+        contentAlignment = Alignment.Center
+    ) {
+        AndroidView(
+            modifier = Modifier.fillMaxSize(),
+            factory = { ctx ->
+                FragmentContainerView(ctx).apply {
+                    id = View.generateViewId()
+                }
+            },
+            update = { view ->
+                val activity = context as? FragmentActivity
+                activity?.supportFragmentManager?.let { fm ->
+                    if (fm.findFragmentById(view.id) == null) {
+                        fm.beginTransaction()
+                            .replace(view.id, MyUnityFragment())
+                            .commit()
+                    }
+                }
+            }
+        )
     }
 }
