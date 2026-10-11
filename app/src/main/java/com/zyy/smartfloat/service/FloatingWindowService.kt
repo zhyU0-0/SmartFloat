@@ -77,15 +77,22 @@ class FloatingWindowService : Service() {
         const val ACTION_TASK_START = "com.zyy.smartfloat.TASK_START"
         const val ACTION_VOICE_RECOGNITION = "com.zyy.smartfloat.VOICE_RECOGNITION"
         const val ACTION_IMAGE_RECOGNITION = "com.zyy.smartfloat.IMAGE_RECOGNITION"
+        const val ACTION_FLOATING_STOPPED = "com.zyy.smartfloat.FLOATING_STOPPED"
         const val EXTRA_LLM_RESULT = "extra_llm_result"
         const val EXTRA_LLM_QUESTION = "extra_llm_question"
         const val EXTRA_VOICE_TEXT = "extra_voice_text"
         const val EXTRA_IMAGE_TEXT = "extra_image_text"
+
+        // 服务是否正在运行，供 UI 层初始化悬浮窗状态
+        @Volatile
+        var isServiceRunning = false
+
         private const val TAG = "FloatingWindowService"
     }
 
     override fun onCreate() {
         super.onCreate()
+        isServiceRunning = true
         windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
         processor = FloatTaskProcessor(this, serviceScope, object : FloatTaskProcessor.UiCallback {
             override fun onUpdateFloatingText() {
@@ -149,6 +156,7 @@ class FloatingWindowService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onDestroy() {
+        isServiceRunning = false
         serviceScope.cancel()
         hideFloatingWindow()
         mainHandler.removeCallbacks(longPressRunnable)
@@ -332,7 +340,15 @@ class FloatingWindowService : Service() {
                         if (deltaX <= 10 && deltaY <= 10) {
                             if (processor.isProcessing) {
                                 // 如果正在处理中，点击按钮取消任务
-                                cancelProcessing()
+                                processor.cancelProcessing()
+                            } else if (!processor.isRecording) {
+                                // 非录音状态：双击关闭悬浮窗
+                                if (event.eventTime - lastClickTime < DOUBLE_CLICK_INTERVAL) {
+                                    lastClickTime = 0
+                                    stopService()
+                                } else {
+                                    lastClickTime = event.eventTime
+                                }
                             }
                         }
                         if (processor.longPressTriggered && processor.isRecording) {
@@ -397,6 +413,10 @@ class FloatingWindowService : Service() {
                 windowManager?.removeView(floatView)
                 isShowing = false
                 floatView = null
+                // 通知 UI 层悬浮窗已关闭（双击红按钮/通知"隐藏"/服务销毁均会走到这里）
+                LocalBroadcastManager.getInstance(this).sendBroadcast(
+                    Intent(ACTION_FLOATING_STOPPED)
+                )
             }
         } catch (e: Exception) {
             Log.e(TAG, "hideFloatingWindow failed: ${e.message}")

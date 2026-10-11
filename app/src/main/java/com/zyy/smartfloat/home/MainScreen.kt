@@ -109,6 +109,7 @@ fun MainScreen(
                 val instructionRecords by viewModel.instructionRecords.collectAsStateWithLifecycle()
                 val imageRecognitionResult by viewModel.imageRecognitionResult.collectAsStateWithLifecycle()
                 val llmQuestion by viewModel.llmQuestion.collectAsStateWithLifecycle()
+                val isFloatingShowing by viewModel.isFloatingShowing.collectAsStateWithLifecycle()
 
                 // 版本更新相关状态
                 val showUpdateDialog by viewModel.showUpdateDialog.collectAsStateWithLifecycle()
@@ -329,6 +330,8 @@ fun MainScreen(
                 ) { innerPadding ->
                     FloatingButtonScreen(
                         modifier = Modifier.padding(innerPadding),
+                        isFloatingShowing = isFloatingShowing,
+                        onFloatingShowingChange = viewModel::setFloatingShowing,
                         llmResult = llmResult,
                         instructionRecords = instructionRecords,
                         imageRecognitionResult = imageRecognitionResult,
@@ -345,6 +348,8 @@ fun MainScreen(
 @Composable
 fun FloatingButtonScreen(
     modifier: Modifier = Modifier,
+    isFloatingShowing: Boolean = false,
+    onFloatingShowingChange: (Boolean) -> Unit = {},
     llmResult: List<String> = emptyList(),
     instructionRecords: List<InstructionRecord> = emptyList(),
     imageRecognitionResult: String = "",
@@ -353,7 +358,6 @@ fun FloatingButtonScreen(
 ) {
     val context = LocalContext.current
     val activity = context as? Activity
-    var isFloatingShowing by remember { mutableStateOf(false) }
     var localQuestion by remember { mutableStateOf(llmQuestion) }
 
     DisposableEffect(llmQuestion) {
@@ -396,7 +400,7 @@ fun FloatingButtonScreen(
     ) { granted ->
         if (granted) {
             startFloatingService(context, localQuestion)
-            isFloatingShowing = true
+            onFloatingShowingChange(true)
         }
     }
 
@@ -422,7 +426,7 @@ fun FloatingButtonScreen(
         contract = ActivityResultContracts.StartActivityForResult()
     ) {
         if (Settings.canDrawOverlays(context)) {
-            tryStartService(context) { isFloatingShowing = true }
+            tryStartService(context) { onFloatingShowingChange(true) }
         }
     }
 
@@ -583,12 +587,12 @@ fun FloatingButtonScreen(
                             onTap = {
                                 if (isFloatingShowing) {
                                     stopFloatingService(context)
-                                    isFloatingShowing = false
+                                    onFloatingShowingChange(false)
                                 } else {
                                     if (!Settings.canDrawOverlays(context)) {
                                         requestOverlayPermission(overlayPermissionLauncher)
                                     } else {
-                                        tryStartService(context) { isFloatingShowing = true }
+                                        tryStartService(context) { onFloatingShowingChange(true) }
                                     }
                                 }
                             }

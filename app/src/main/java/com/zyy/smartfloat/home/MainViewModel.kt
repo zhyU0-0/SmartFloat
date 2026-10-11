@@ -39,6 +39,10 @@ class MainViewModel : ViewModel() {
     private val _llmQuestion = MutableStateFlow("点击返回按钮")
     val llmQuestion: StateFlow<String> = _llmQuestion.asStateFlow()
 
+    // 悬浮窗是否正在显示：Service 关闭时通过广播同步为 false，启动成功后由 UI 设置为 true
+    private val _isFloatingShowing = MutableStateFlow(FloatingWindowService.isServiceRunning)
+    val isFloatingShowing: StateFlow<Boolean> = _isFloatingShowing.asStateFlow()
+
     private val _showAddModelReminder = MutableStateFlow(false)
     val showAddModelReminder: StateFlow<Boolean> = _showAddModelReminder.asStateFlow()
 
@@ -139,6 +143,9 @@ class MainViewModel : ViewModel() {
                             _imageRecognitionResult.value = text
                         }
                     }
+                    FloatingWindowService.ACTION_FLOATING_STOPPED -> {
+                        _isFloatingShowing.value = false
+                    }
                 }
             }
         }
@@ -151,6 +158,7 @@ class MainViewModel : ViewModel() {
                     addAction(FloatingWindowService.ACTION_TASK_START)
                     addAction(FloatingWindowService.ACTION_VOICE_RECOGNITION)
                     addAction(FloatingWindowService.ACTION_IMAGE_RECOGNITION)
+                    addAction(FloatingWindowService.ACTION_FLOATING_STOPPED)
                 }
             )
         }
@@ -167,6 +175,11 @@ class MainViewModel : ViewModel() {
 
     fun setCurrentInstruction(instruction: String) {
         _currentInstruction.value = instruction
+    }
+
+    /** UI 层在悬浮窗启动成功后更新显示状态 */
+    fun setFloatingShowing(showing: Boolean) {
+        _isFloatingShowing.value = showing
     }
 
     fun dismissAddModelReminder() {
