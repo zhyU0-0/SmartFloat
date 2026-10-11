@@ -1,5 +1,6 @@
-package com.zyy.smartfloat
+package com.zyy.smartfloat.statistics
 
+import android.graphics.Paint
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -17,10 +18,10 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.zyy.smartfloat.database.Conversation
 import com.zyy.smartfloat.database.DailyTokenUsage
-import com.zyy.smartfloat.viewmodel.StatisticsViewModel
 import java.text.SimpleDateFormat
 import java.util.*
 import androidx.compose.runtime.collectAsState
+import androidx.compose.ui.geometry.Size
 
 @Composable
 fun StatisticsScreen(
@@ -146,13 +147,13 @@ fun TokenUsageBarChart(
             drawRect(
                 color = Color(0xFF4CAF50),
                 topLeft = Offset(left, top),
-                size = androidx.compose.ui.geometry.Size(barWidth - barSpacing, barHeight),
+                size = Size(barWidth - barSpacing, barHeight),
             )
 
-            val textPaint = android.graphics.Paint().apply {
+            val textPaint = Paint().apply {
                 color = android.graphics.Color.BLACK
                 textSize = 24f
-                textAlign = android.graphics.Paint.Align.CENTER
+                textAlign = Paint.Align.CENTER
             }
             drawContext.canvas.nativeCanvas.drawText(
                 usage.date.takeLast(5),

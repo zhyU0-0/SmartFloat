@@ -1,4 +1,4 @@
-package com.zyy.smartfloat
+package com.zyy.smartfloat.skills
 
 import android.util.Log
 import android.widget.Toast
@@ -20,9 +20,9 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.google.gson.Gson
 import com.zyy.smartfloat.database.Skills
-import com.zyy.smartfloat.viewmodel.SkillsManagerViewModel
 import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.res.painterResource
+import com.zyy.smartfloat.R
 import com.zyy.smartfloat.database.AddSkills
 
 @Composable

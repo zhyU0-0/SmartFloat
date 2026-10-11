@@ -1,14 +1,10 @@
-package com.zyy.smartfloat.viewmodel
+package com.zyy.smartfloat.home
 
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.util.Log
-import android.widget.Toast
-import android.widget.Toast.LENGTH_LONG
-import android.widget.Toast.LENGTH_SHORT
-import androidx.core.content.FileProvider
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.localbroadcastmanager.content.LocalBroadcastManager
@@ -25,7 +21,6 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
-import kotlin.math.log
 
 class MainViewModel : ViewModel() {
 

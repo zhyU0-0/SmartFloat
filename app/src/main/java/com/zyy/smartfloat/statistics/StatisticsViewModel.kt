@@ -1,4 +1,4 @@
-package com.zyy.smartfloat.viewmodel
+package com.zyy.smartfloat.statistics
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -8,7 +8,6 @@ import com.zyy.smartfloat.database.DailyTokenUsage
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 import android.util.Log
 

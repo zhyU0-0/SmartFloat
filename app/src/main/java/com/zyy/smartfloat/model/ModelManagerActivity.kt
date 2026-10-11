@@ -1,9 +1,5 @@
-package com.zyy.smartfloat
+package com.zyy.smartfloat.model
 
-import android.content.ClipData
-import android.content.ClipboardManager
-import android.content.Context
-import android.media.Image
 import android.util.Log
 import android.widget.Toast
 import androidx.compose.foundation.layout.*
@@ -23,9 +19,9 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.google.gson.Gson
 import com.zyy.smartfloat.database.AddModel
 import com.zyy.smartfloat.database.ModelConfig
-import com.zyy.smartfloat.viewmodel.ModelManagerViewModel
 import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.res.painterResource
+import com.zyy.smartfloat.R
 
 @Composable
 fun ModelManagerScreen(

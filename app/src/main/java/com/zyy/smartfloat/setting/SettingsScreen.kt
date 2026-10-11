@@ -1,16 +1,17 @@
-package com.zyy.smartfloat
+package com.zyy.smartfloat.setting
 
 import android.widget.Toast
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.zyy.smartfloat.viewmodel.SettingsViewModel
 
 
 @Composable
@@ -158,8 +159,8 @@ fun SettingsScreen(
                         onValueChange = { maxLoops = it },
                         modifier = Modifier.width(80.dp),
                         label = { Text("次数") },
-                        keyboardOptions = androidx.compose.foundation.text.KeyboardOptions.Default.copy(
-                            keyboardType = androidx.compose.ui.text.input.KeyboardType.Number
+                        keyboardOptions = KeyboardOptions.Default.copy(
+                            keyboardType = KeyboardType.Number
                         )
                     )
                     Button(
@@ -199,8 +200,8 @@ fun SettingsScreen(
                         onValueChange = { tokenThreshold = it },
                         modifier = Modifier.width(100.dp),
                         label = { Text("Token") },
-                        keyboardOptions = androidx.compose.foundation.text.KeyboardOptions.Default.copy(
-                            keyboardType = androidx.compose.ui.text.input.KeyboardType.Number
+                        keyboardOptions = KeyboardOptions.Default.copy(
+                            keyboardType = KeyboardType.Number
                         )
                     )
                     Button(

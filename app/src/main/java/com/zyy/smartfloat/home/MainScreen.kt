@@ -1,4 +1,4 @@
-package com.zyy.smartfloat
+package com.zyy.smartfloat.home
 // 添加 CircleShape 导入
 import android.Manifest
 import android.accessibilityservice.AccessibilityServiceInfo
@@ -77,12 +77,14 @@ import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.zyy.smartfloat.NavPage
+import com.zyy.smartfloat.R
 import com.zyy.smartfloat.database.InstructionRecord
 import com.zyy.smartfloat.service.FloatingWindowService
-import com.zyy.smartfloat.unity.MyUnityActivity
 import com.zyy.smartfloat.utils.VoiceRecognizer
-import com.zyy.smartfloat.viewmodel.MainViewModel
+import java.io.File
 
 @Composable
 fun MainScreen(
@@ -137,7 +139,7 @@ fun MainScreen(
                 }
 
                 // 监听 ON_RESUME：用户从未知来源设置页回来后，重试安装
-                val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+                val lifecycleOwner = LocalLifecycleOwner.current
                 DisposableEffect(lifecycleOwner, pendingApkPath) {
                     val observer = LifecycleEventObserver { _, event ->
                         if (event == Lifecycle.Event.ON_RESUME && !pendingApkPath.isNullOrBlank()) {
@@ -1069,7 +1071,7 @@ private fun formatBytes(bytes: Long): String {
  * @return true 表示已触发安装 Intent；false 表示权限不足，已跳转设置页等待用户授权。
  */
 private fun installApk(context: Context, apkPath: String): Boolean {
-    val apkFile = java.io.File(apkPath)
+    val apkFile = File(apkPath)
     if (!apkFile.exists()) {
         Log.e("PackageUpdate", "installApk: 文件不存在 $apkPath")
         return false

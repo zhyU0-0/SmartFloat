@@ -1,4 +1,4 @@
-package com.zyy.smartfloat.viewmodel
+package com.zyy.smartfloat.setting
 
 import android.content.Context
 import android.content.SharedPreferences

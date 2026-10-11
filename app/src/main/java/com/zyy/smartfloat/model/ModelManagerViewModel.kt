@@ -1,4 +1,4 @@
-package com.zyy.smartfloat.viewmodel
+package com.zyy.smartfloat.model
 
 import android.content.ClipData
 import android.content.ClipboardManager
@@ -17,7 +17,6 @@ import com.zyy.smartfloat.database.ModelConfig
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 
 class ModelManagerViewModel : ViewModel() {
