@@ -22,18 +22,9 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.SmartFloat">
         <activity
-            android:name=".unity.MyUnityActivity"
-            android:process=":unity"
+            android:name=".skills.TouchDesignActivity"
             android:exported="true"
-            android:label="@string/title_activity_main"
-            android:launchMode="singleTask"
-            android:theme="@style/Theme.SmartFloat.Unity"/>
-
-        <activity
-            android:name=".NavActivity"
-            android:exported="true"
-            android:label="@string/title_activity_main"
-            android:launchMode="singleTask"
+            android:label="@string/title_activity_touch_design"
             android:theme="@style/Theme.SmartFloat">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
@@ -41,6 +32,22 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+        <activity
+            android:name=".unity.MyUnityActivity"
+            android:exported="true"
+            android:label="@string/title_activity_main"
+            android:launchMode="singleTask"
+            android:process=":unity"
+            android:theme="@style/Theme.SmartFloat.Unity" />
+        <activity
+            android:name=".NavActivity"
+            android:exported="true"
+            android:label="@string/title_activity_main"
+            android:launchMode="singleTask"
+            android:theme="@style/Theme.SmartFloat">
+
+        </activity>
+
         <service
             android:name=".service.FloatingWindowService"
             android:exported="false"
