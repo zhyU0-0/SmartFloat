@@ -1,4 +1,4 @@
-package com.zyy.smartfloat.skills
+package com.zyy.smartfloat.skills.viewmodel
 
 import android.content.ClipData
 import android.content.ClipboardManager
@@ -17,7 +17,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
 class SkillsManagerViewModel : ViewModel() {
-    private val repository = MyApp.repository
+    private val repository = MyApp.Companion.repository
 
     private val _skills = MutableStateFlow<List<Skills>>(emptyList())
     val skills: StateFlow<List<Skills>> = _skills.asStateFlow()

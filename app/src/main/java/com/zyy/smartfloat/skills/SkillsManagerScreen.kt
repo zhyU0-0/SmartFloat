@@ -24,6 +24,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.res.painterResource
 import com.zyy.smartfloat.R
 import com.zyy.smartfloat.database.AddSkills
+import com.zyy.smartfloat.skills.viewmodel.SkillsManagerViewModel
 
 @Composable
 fun SkillsManagerScreen(
