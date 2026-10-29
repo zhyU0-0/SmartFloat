@@ -55,16 +55,37 @@ class TouchDesignViewModel : ViewModel() {
         if (current.isEmpty()) return
         _touchEventCompositions.value = _touchEventCompositions.value + SFTouchEventComposition(current)
         _composition.value = emptyList()
+        editingIndex = -1
     }
 
     fun addTouchEvent(event: SFTouchEvent){
         _composition.value = _composition.value + event
     }
 
+    private var editingIndex: Int = -1
+
+    fun newTouchEvent(type: Int){
+        //底部弹窗创建事件：加入事件列表并设为当前事件，坐标由设计平台覆盖
+        val event = getEmptyTouchEvent().copy(type = type)
+        _composition.value += event
+        editingIndex = _composition.value.size - 1
+        touchEvent.value = event
+    }
+
+    fun recordTouchEvent(event: SFTouchEvent){
+        //设计平台的行为只覆盖当前事件（同步更新事件列表中对应项）
+        touchEvent.value = event
+        if (editingIndex in _composition.value.indices) {
+            _composition.value = _composition.value.toMutableList().also { it[editingIndex] = event }
+        }
+        Log.d("TouchDesign", "记录事件: $event")
+    }
+
     fun selectComposition(index: Int){
         //点击组合列表项，事件列表切换展示该组合
         _touchEventCompositions.value.getOrNull(index)?.let {
             _composition.value = it.composition
+            editingIndex = -1
         }
     }
 
