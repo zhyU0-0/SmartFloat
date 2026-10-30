@@ -18,5 +18,7 @@ data class SFTouchPosition(
 )
 //一整个触摸事件组合
 data class SFTouchEventComposition(
+    val id: Long = 0,
+    val name: String = "",
     val composition: List<SFTouchEvent>
 )

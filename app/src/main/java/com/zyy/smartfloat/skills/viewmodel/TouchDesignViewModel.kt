@@ -9,18 +9,22 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.google.gson.Gson
 import com.zyy.smartfloat.MyApp
+import com.zyy.smartfloat.database.AppDatabase
 import com.zyy.smartfloat.database.AddSkills
 import com.zyy.smartfloat.database.SFTouchEvent
 import com.zyy.smartfloat.database.SFTouchEventComposition
 import com.zyy.smartfloat.database.SFTouchPosition
 import com.zyy.smartfloat.database.Skills
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 class TouchDesignViewModel : ViewModel() {
     private val repository = MyApp.Companion.repository
+    private val database = AppDatabase.getInstance(MyApp.instance)
 
     private val _touchEventCompositions = MutableStateFlow<List<SFTouchEventComposition>>(emptyList())
     val touchEventCompositions: StateFlow<List<SFTouchEventComposition>> = _touchEventCompositions.asStateFlow()
@@ -32,6 +36,9 @@ class TouchDesignViewModel : ViewModel() {
 
     private val _selectedIndex = MutableStateFlow(-1)
     val selectedIndex: StateFlow<Int> = _selectedIndex.asStateFlow()
+
+    private val _selectedCompositionIndex = MutableStateFlow(-1)
+    val selectedCompositionIndex: StateFlow<Int> = _selectedCompositionIndex.asStateFlow()
 
     fun getEmptyTouchEvent(): SFTouchEvent {
         return SFTouchEvent(
@@ -46,20 +53,28 @@ class TouchDesignViewModel : ViewModel() {
 
     init {
         viewModelScope.launch {
-            /*repository.allSkills.collect {
-                _skills.value = it
-            }*/
+            //进入页面时读取组合表
+            val loaded = withContext(Dispatchers.IO) { database.getAllCompositions() }
+            if (_touchEventCompositions.value.isEmpty()) {
+                _touchEventCompositions.value = loaded
+            }
         }
     }
 
-    fun addComposition(){
-        //把当前事件列表存为一个组合，然后清空事件列表开始新组合
-        val current = _composition.value
-        if (current.isEmpty()) return
-        _touchEventCompositions.value = _touchEventCompositions.value + SFTouchEventComposition(current)
+    fun addComposition(name: String){
+        //1. 先把当前事件列表保存回当前组合，并更新数据库
+        saveCurrentEventsToComposition()
+        //2. 创建新组合，写入数据库
+        val finalName = name.trim().ifEmpty { "组合 ${_touchEventCompositions.value.size + 1}" }
+        val newComposition = SFTouchEventComposition(name = finalName, composition = emptyList())
+        val id = database.insertComposition(newComposition)
+        //3. 选中新组合，事件列表切换为新组合（空）
+        _touchEventCompositions.value = _touchEventCompositions.value + newComposition.copy(id = id)
         _composition.value = emptyList()
         editingIndex = -1
         _selectedIndex.value = -1
+        touchEvent.value = getEmptyTouchEvent()
+        _selectedCompositionIndex.value = _touchEventCompositions.value.size - 1
     }
 
     fun addTouchEvent(event: SFTouchEvent){
@@ -100,17 +115,23 @@ class TouchDesignViewModel : ViewModel() {
     fun deleteEvent(index: Int){
         val list = _composition.value
         if (index !in list.indices) return
+        val deletingCurrent = editingIndex == index || _selectedIndex.value == index
         _composition.value = list.toMutableList().also { it.removeAt(index) }
-        if (editingIndex == index) {
-            //删除的正是当前编辑的事件，清空编辑状态
+        if (deletingCurrent) {
+            //删除的是当前选中的事件：自动选中被删位置的下一项，没有则选中最后一项
+            val remaining = _composition.value
+            val target = when {
+                remaining.isEmpty() -> -1
+                index <= remaining.lastIndex -> index
+                else -> remaining.lastIndex
+            }
             editingIndex = -1
             _selectedIndex.value = -1
             touchEvent.value = getEmptyTouchEvent()
-        } else if (editingIndex > index) {
-            editingIndex--
-        }
-        if (_selectedIndex.value > index) {
-            _selectedIndex.value--
+            if (target >= 0) selectEvent(target)
+        } else {
+            if (editingIndex > index) editingIndex--
+            if (_selectedIndex.value > index) _selectedIndex.value--
         }
     }
 
@@ -154,16 +175,72 @@ class TouchDesignViewModel : ViewModel() {
     }
 
     fun selectComposition(index: Int){
-        //点击组合列表项，事件列表切换展示该组合
+        //切换组合前，先把当前事件列表保存回正在编辑的组合
+        saveCurrentEventsToComposition()
+        //再加载目标组合的事件列表
         _touchEventCompositions.value.getOrNull(index)?.let {
             _composition.value = it.composition
+            _selectedCompositionIndex.value = index
             editingIndex = -1
             _selectedIndex.value = -1
+            touchEvent.value = getEmptyTouchEvent()
+            //默认选中第一个事件；延时事件不做处理
+            it.composition.firstOrNull()
+                ?.takeIf { event -> event.type != 0 }
+                ?.let { selectEvent(0) }
+        }
+    }
+
+    private fun saveCurrentEventsToComposition(){
+        val selected = _selectedCompositionIndex.value
+        val current = _composition.value
+        val list = _touchEventCompositions.value
+        if (selected in list.indices) {
+            //保存回当前选中的组合
+            if (list[selected].composition != current) {
+                val updated = list[selected].copy(composition = current)
+                database.updateComposition(updated)
+                _touchEventCompositions.value = list.toMutableList().also {
+                    it[selected] = updated
+                }
+            }
+        } else if (current.isNotEmpty()) {
+            //没有选中组合时，把当前事件存为新组合，避免切换后丢失
+            val newComposition = SFTouchEventComposition(
+                name = "组合 ${list.size + 1}",
+                composition = current
+            )
+            val id = database.insertComposition(newComposition)
+            _touchEventCompositions.value = list + newComposition.copy(id = id)
+        }
+    }
+
+    fun deleteComposition(index: Int){
+        val list = _touchEventCompositions.value
+        if (index !in list.indices) return
+        database.deleteComposition(list[index])
+        val remaining = list.toMutableList().also { it.removeAt(index) }
+        _touchEventCompositions.value = remaining
+        val selected = _selectedCompositionIndex.value
+        when {
+            selected == index -> {
+                //被删除的是当前组合：清空事件列表，再自动选中相邻组合（同时默认选中事件）
+                _selectedCompositionIndex.value = -1
+                _composition.value = emptyList()
+                editingIndex = -1
+                _selectedIndex.value = -1
+                touchEvent.value = getEmptyTouchEvent()
+                if (remaining.isNotEmpty()) {
+                    selectComposition(index.coerceAtMost(remaining.lastIndex))
+                }
+            }
+            selected > index -> _selectedCompositionIndex.value = selected - 1
         }
     }
 
     fun saveCompositions(){
-        //预留保存接口
+        //保存按钮：把当前事件列表写回正在编辑的组合（并同步数据库）
+        saveCurrentEventsToComposition()
     }
 
 

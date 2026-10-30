@@ -1,6 +1,7 @@
 package com.zyy.smartfloat.skills
 
 import android.os.Bundle
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -312,6 +313,8 @@ fun TouchEventList(
 ){
     val compositions by viewModel.composition.collectAsState()
     val selectedIndex by viewModel.selectedIndex.collectAsState()
+    val touchEventCompositions by viewModel.touchEventCompositions.collectAsState()
+    val context = LocalContext.current
     val listState = rememberLazyListState()
     var showAddSheet by remember { mutableStateOf(false) }
     var showDelayDialog by remember { mutableStateOf(false) }
@@ -384,7 +387,14 @@ fun TouchEventList(
                 )
             }
             item {
-                IconButton(onClick = { showAddSheet = true }) {
+                IconButton(onClick = {
+                    if (touchEventCompositions.isEmpty()) {
+                        //还没有组合时不允许添加事件
+                        Toast.makeText(context, "请先创建组合", Toast.LENGTH_SHORT).show()
+                    } else {
+                        showAddSheet = true
+                    }
+                }) {
                     Text(text = "+", fontSize = 24.sp, color = Color(0xFF0052D4))
                 }
             }
@@ -452,12 +462,16 @@ fun TouchEventList(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CompositionList(
     viewModel: TouchDesignViewModel,
     modifier: Modifier = Modifier
 ){
     val touchEventCompositions by viewModel.touchEventCompositions.collectAsState()
+    val selectedCompositionIndex by viewModel.selectedCompositionIndex.collectAsState()
+    var showNameDialog by remember { mutableStateOf(false) }
+    var compositionActionIndex by remember { mutableStateOf(-1) }
     //横向显示列表，高80dp，末尾为添加按钮，右侧为保存按钮
     Row(
         modifier = modifier.fillMaxWidth(),
@@ -470,16 +484,45 @@ fun CompositionList(
             verticalAlignment = Alignment.CenterVertically
         ) {
             itemsIndexed(touchEventCompositions) { index, composition ->
-                CompositionItem(index, composition, onClick = { viewModel.selectComposition(index) })
+                CompositionItem(
+                    index = index,
+                    composition = composition,
+                    selected = index == selectedCompositionIndex,
+                    onClick = { viewModel.selectComposition(index) },
+                    onLongClick = { compositionActionIndex = index }
+                )
             }
             item {
-                IconButton(onClick = { viewModel.addComposition() }) {
+                IconButton(onClick = { showNameDialog = true }) {
                     Text(text = "+", fontSize = 24.sp, color = Color(0xFF0052D4))
                 }
             }
         }
         TextButton(onClick = { viewModel.saveCompositions() }) {
             Text("保存")
+        }
+    }
+
+    if (showNameDialog) {
+        CompositionNameDialog(
+            onConfirm = { name ->
+                viewModel.addComposition(name)
+                showNameDialog = false
+            },
+            onDismiss = { showNameDialog = false }
+        )
+    }
+
+    if (compositionActionIndex >= 0) {
+        ModalBottomSheet(onDismissRequest = { compositionActionIndex = -1 }) {
+            Column(modifier = Modifier
+                .fillMaxWidth()
+                .padding(bottom = 32.dp)) {
+                SheetOption("删除") {
+                    viewModel.deleteComposition(compositionActionIndex)
+                    compositionActionIndex = -1
+                }
+            }
         }
     }
 }
@@ -517,6 +560,33 @@ private fun DelayInputDialog(
         },
         confirmButton = {
             TextButton(onClick = { input.toLongOrNull()?.let(onConfirm) }) {
+                Text("确定")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("取消")
+            }
+        }
+    )
+}
+
+@Composable
+private fun CompositionNameDialog(onConfirm: (String) -> Unit, onDismiss: () -> Unit) {
+    var input by remember { mutableStateOf("") }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("新建组合") },
+        text = {
+            OutlinedTextField(
+                value = input,
+                onValueChange = { input = it },
+                label = { Text("组合名称") },
+                singleLine = true
+            )
+        },
+        confirmButton = {
+            TextButton(onClick = { onConfirm(input) }) {
                 Text("确定")
             }
         },
@@ -573,17 +643,37 @@ private fun TouchEventItem(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun CompositionItem(index: Int, composition: SFTouchEventComposition, onClick: () -> Unit) {
+private fun CompositionItem(
+    index: Int,
+    composition: SFTouchEventComposition,
+    selected: Boolean,
+    onClick: () -> Unit,
+    onLongClick: () -> Unit
+) {
+    val interactionSource = remember { MutableInteractionSource() }
     Card(
-        onClick = onClick,
+        colors = CardDefaults.cardColors(
+            containerColor = if (selected) Color(0xFFD6E4FF) else Color(0xFFF5F5F5)
+        ),
         modifier = Modifier
             .fillMaxHeight()
             .width(120.dp)
             .padding(horizontal = 4.dp, vertical = 4.dp)
+            .combinedClickable(
+                interactionSource = interactionSource,
+                indication = null,
+                onClick = onClick,
+                onLongClick = onLongClick
+            )
     ) {
         Column(modifier = Modifier.padding(8.dp)) {
-            Text(text = "组合 ${index + 1}", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+            Text(
+                text = composition.name.ifEmpty { "组合 ${index + 1}" },
+                fontWeight = FontWeight.Bold,
+                fontSize = 14.sp
+            )
             Text(text = "${composition.composition.size} 个事件", fontSize = 12.sp, color = Color.Gray)
         }
     }

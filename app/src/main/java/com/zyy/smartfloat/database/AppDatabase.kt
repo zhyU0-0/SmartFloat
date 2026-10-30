@@ -6,6 +6,8 @@ import android.database.Cursor
 import android.database.sqlite.SQLiteDatabase
 import android.database.sqlite.SQLiteOpenHelper
 import android.util.Log
+import com.google.gson.Gson
+import com.google.gson.reflect.TypeToken
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -16,7 +18,7 @@ class AppDatabase(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME, n
 
     companion object {
         private const val DATABASE_NAME = "smart_float.db"
-        private const val DATABASE_VERSION = 2
+        private const val DATABASE_VERSION = 4
 
         // ModelConfig 表
         private const val TABLE_MODEL_CONFIG = "model_config"
@@ -46,6 +48,13 @@ class AppDatabase(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME, n
         private const val COL_SKILL_IS_ACTIVE = "isActive"
         private const val COL_SKILL_CREATED_AT = "createdAt"
 
+        // TouchComposition 表
+        private const val TABLE_TOUCH_COMPOSITION = "touch_composition"
+        private const val COL_COMPOSITION_ID = "id"
+        private const val COL_COMPOSITION_NAME = "name"
+        private const val COL_COMPOSITION_EVENTS = "events"
+        private const val COL_COMPOSITION_CREATED_AT = "createdAt"
+
 
         @Volatile
         private var INSTANCE: AppDatabase? = null
@@ -58,6 +67,9 @@ class AppDatabase(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME, n
             }
         }
     }
+
+    private val gson = Gson()
+    private val eventListType = object : TypeToken<List<SFTouchEvent>>() {}.type
 
     override fun onCreate(db: SQLiteDatabase) {
         // 创建模型配置表
@@ -96,23 +108,29 @@ class AppDatabase(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME, n
                 $COL_SKILL_CREATED_AT INTEGER NOT NULL
             )""".trimIndent()
 
+        val createTouchComposition = """
+            CREATE TABLE IF NOT EXISTS $TABLE_TOUCH_COMPOSITION (
+                $COL_COMPOSITION_ID INTEGER PRIMARY KEY AUTOINCREMENT,
+                $COL_COMPOSITION_NAME TEXT NOT NULL,
+                $COL_COMPOSITION_EVENTS TEXT NOT NULL,
+                $COL_COMPOSITION_CREATED_AT INTEGER NOT NULL
+            )""".trimIndent()
+
         db.execSQL(createModelConfig)
         db.execSQL(createConversation)
         db.execSQL(createSkills)
+        db.execSQL(createTouchComposition)
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
-        if (oldVersion < 3) {
-            // 添加 baseUrl 列
-            db.execSQL("ALTER TABLE $TABLE_MODEL_CONFIG ADD COLUMN $COL_BASE_URL TEXT")
+        if (oldVersion < 4) {
+            // 创建触摸事件组合表
             db.execSQL("""
-            CREATE TABLE IF NOT EXISTS $TABLE_SKILL (
-                $COL_SKILL_ID INTEGER PRIMARY KEY AUTOINCREMENT,
-                $COL_SKILL_NAME TEXT NOT NULL,
-                $COL_SKILL_CONTENT TEXT,
-                $COL_SKILL_CLICKING_TIPS TEXT,
-                $COL_SKILL_IS_ACTIVE INTEGER NOT NULL DEFAULT 0,
-                $COL_SKILL_CREATED_AT INTEGER NOT NULL
+            CREATE TABLE IF NOT EXISTS $TABLE_TOUCH_COMPOSITION (
+                $COL_COMPOSITION_ID INTEGER PRIMARY KEY AUTOINCREMENT,
+                $COL_COMPOSITION_NAME TEXT NOT NULL,
+                $COL_COMPOSITION_EVENTS TEXT NOT NULL,
+                $COL_COMPOSITION_CREATED_AT INTEGER NOT NULL
             )"""
             )
         }
@@ -465,6 +483,71 @@ class AppDatabase(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME, n
                     modelId = cursor.getLong(cursor.getColumnIndexOrThrow(COL_MODEL_ID_FK)),
                     modelName = cursor.getString(cursor.getColumnIndexOrThrow(COL_MODEL_NAME)),
                     createdAt = cursor.getLong(cursor.getColumnIndexOrThrow(COL_CONV_CREATED_AT))
+                )
+            )
+        }
+        cursor.close()
+        return list
+    }
+
+    // ==================== TouchComposition 操作 ====================
+
+    fun insertComposition(composition: SFTouchEventComposition): Long {
+        val db = writableDatabase
+        val values = ContentValues().apply {
+            put(COL_COMPOSITION_NAME, composition.name)
+            put(COL_COMPOSITION_EVENTS, gson.toJson(composition.composition, eventListType))
+            put(COL_COMPOSITION_CREATED_AT, System.currentTimeMillis())
+        }
+        return db.insert(TABLE_TOUCH_COMPOSITION, null, values)
+    }
+
+    fun updateComposition(composition: SFTouchEventComposition): Int {
+        if (composition.id == 0L) return 0
+        val db = writableDatabase
+        val values = ContentValues().apply {
+            put(COL_COMPOSITION_NAME, composition.name)
+            put(COL_COMPOSITION_EVENTS, gson.toJson(composition.composition, eventListType))
+        }
+        return db.update(
+            TABLE_TOUCH_COMPOSITION, values,
+            "$COL_COMPOSITION_ID = ?", arrayOf(composition.id.toString())
+        )
+    }
+
+    fun deleteComposition(composition: SFTouchEventComposition): Int {
+        if (composition.id == 0L) return 0
+        val db = writableDatabase
+        return db.delete(
+            TABLE_TOUCH_COMPOSITION,
+            "$COL_COMPOSITION_ID = ?", arrayOf(composition.id.toString())
+        )
+    }
+
+    fun getAllCompositions(): List<SFTouchEventComposition> {
+        val db = readableDatabase
+        val cursor = db.query(
+            TABLE_TOUCH_COMPOSITION, null, null, null, null, null,
+            "$COL_COMPOSITION_ID ASC"
+        )
+        return cursorToCompositionList(cursor)
+    }
+
+    private fun cursorToCompositionList(cursor: Cursor): List<SFTouchEventComposition> {
+        val list = mutableListOf<SFTouchEventComposition>()
+        while (cursor.moveToNext()) {
+            val raw = cursor.getString(cursor.getColumnIndexOrThrow(COL_COMPOSITION_EVENTS))
+            val events: List<SFTouchEvent> = try {
+                gson.fromJson<List<SFTouchEvent>>(raw, eventListType) ?: emptyList()
+            } catch (e: Exception) {
+                Log.e("AppDatabase", "解析触摸事件组合失败", e)
+                emptyList()
+            }
+            list.add(
+                SFTouchEventComposition(
+                    id = cursor.getLong(cursor.getColumnIndexOrThrow(COL_COMPOSITION_ID)),
+                    name = cursor.getString(cursor.getColumnIndexOrThrow(COL_COMPOSITION_NAME)),
+                    composition = events
                 )
             )
         }
