@@ -9,8 +9,10 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -26,11 +28,14 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.ModalBottomSheet
@@ -39,8 +44,10 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -50,6 +57,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
@@ -63,6 +71,7 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.zIndex
 import com.zyy.smartfloat.database.SFTouchEvent
 import com.zyy.smartfloat.database.SFTouchEventComposition
 import com.zyy.smartfloat.database.SFTouchPosition
@@ -136,6 +145,36 @@ fun DesignWorkspace(
         val maxX = (workspaceSize.width - buttonRadiusPx * 2).coerceAtLeast(0f)
         val maxY = (workspaceSize.height - buttonRadiusPx * 2).coerceAtLeast(0f)
         return Offset(p.x.coerceIn(0f, maxX), p.y.coerceIn(0f, maxY))
+    }
+
+    //屏幕坐标 -> 工作区坐标
+    fun toWorkspacePosition(p: SFTouchPosition): Offset {
+        if (workspaceSize.width == 0 || workspaceSize.height == 0) return Offset.Zero
+        return Offset(
+            (p.x / screenWidth * workspaceSize.width).toFloat(),
+            (p.y / screenHeight * workspaceSize.height).toFloat()
+        )
+    }
+
+    //选择事件后，把该事件的数据绘制到设计平台，便于继续编辑
+    LaunchedEffect(currentEvent, workspaceSize) {
+        if (workspaceSize == IntSize.Zero) return@LaunchedEffect
+        dragPath = if (currentEvent.type == 2) {
+            (listOf(currentEvent.downPosition) + currentEvent.movePositionList + currentEvent.upPosition)
+                .map { toWorkspacePosition(it) }
+        } else {
+            emptyList()
+        }
+        val anchor = when (currentEvent.type) {
+            1 -> currentEvent.downPosition
+            2 -> currentEvent.upPosition
+            else -> null
+        }
+        if (anchor != null) {
+            buttonPosition = clampToWorkspace(
+                toWorkspacePosition(anchor) - Offset(buttonRadiusPx, buttonRadiusPx)
+            )
+        }
     }
 
     Box(
@@ -227,7 +266,11 @@ fun DesignWorkspace(
         val center = buttonPosition + Offset(buttonRadiusPx, buttonRadiusPx)
         val screenPos = toScreenPosition(center)
         Text(
-            text = "$typeText (${screenPos.x.toInt()}, ${screenPos.y.toInt()})",
+            text = if (currentEvent.type == 0) {
+                "$typeText ${currentEvent.delay}ms"
+            } else {
+                "$typeText (${screenPos.x.toInt()}, ${screenPos.y.toInt()})"
+            },
             fontSize = 12.sp,
             color = Color.Gray,
             modifier = Modifier
@@ -268,8 +311,15 @@ fun TouchEventList(
     modifier: Modifier = Modifier
 ){
     val compositions by viewModel.composition.collectAsState()
+    val selectedIndex by viewModel.selectedIndex.collectAsState()
+    val listState = rememberLazyListState()
     var showAddSheet by remember { mutableStateOf(false) }
     var showDelayDialog by remember { mutableStateOf(false) }
+    var editingDelayIndex by remember { mutableStateOf(-1) }
+    var actionIndex by remember { mutableStateOf(-1) }
+    //拖动排序状态
+    var draggingIndex by remember { mutableStateOf(-1) }
+    var dragOffsetY by remember { mutableFloatStateOf(0f) }
     //竖直显示列表，宽100dp，末尾为添加按钮
     Column(modifier = modifier.fillMaxHeight()) {
         Text(
@@ -279,10 +329,59 @@ fun TouchEventList(
         )
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
+            state = listState,
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            items(compositions) { event ->
-                TouchEventItem(event)
+            itemsIndexed(compositions) { index, event ->
+                TouchEventItem(
+                    event = event,
+                    selected = index == selectedIndex,
+                    onClick = {
+                        if (event.type == 0) {
+                            //点击延时事件：选中并弹出弹窗修改时长
+                            editingDelayIndex = index
+                            showDelayDialog = true
+                        } else {
+                            viewModel.selectEvent(index)
+                        }
+                    },
+                    onLongClick = { actionIndex = index },
+                    modifier = Modifier
+                        .zIndex(if (index == draggingIndex) 1f else 0f)
+                        .graphicsLayer {
+                            translationY = if (index == draggingIndex) dragOffsetY else 0f
+                        },
+                    dragModifier = Modifier.pointerInput(index, compositions.size) {
+                        detectDragGestures(
+                            onDragStart = {
+                                draggingIndex = index
+                                dragOffsetY = 0f
+                            },
+                            onDrag = { change, amount ->
+                                change.consume()
+                                dragOffsetY += amount.y
+                            },
+                            onDragEnd = {
+                                val from = index
+                                val info = listState.layoutInfo.visibleItemsInfo
+                                    .firstOrNull { it.index == from }
+                                val center = info?.let { it.offset + dragOffsetY + it.size / 2f }
+                                val to = center?.let { c ->
+                                    listState.layoutInfo.visibleItemsInfo
+                                        .firstOrNull { c >= it.offset && c <= it.offset + it.size }
+                                        ?.index
+                                }
+                                if (to != null && to != from) viewModel.moveEvent(from, to)
+                                draggingIndex = -1
+                                dragOffsetY = 0f
+                            },
+                            onDragCancel = {
+                                draggingIndex = -1
+                                dragOffsetY = 0f
+                            }
+                        )
+                    }
+                )
             }
             item {
                 IconButton(onClick = { showAddSheet = true }) {
@@ -299,6 +398,7 @@ fun TouchEventList(
                 .padding(bottom = 32.dp)) {
                 SheetOption("延时") {
                     showAddSheet = false
+                    editingDelayIndex = -1
                     showDelayDialog = true
                 }
                 SheetOption("点击") {
@@ -315,12 +415,40 @@ fun TouchEventList(
 
     if (showDelayDialog) {
         DelayInputDialog(
+            initialValue = compositions.getOrNull(editingDelayIndex)
+                ?.takeIf { it.type == 0 && it.delay > 0 }
+                ?.delay?.toString() ?: "",
             onConfirm = { delay ->
-                viewModel.addTouchEvent(viewModel.getEmptyTouchEvent().copy(type = 0, delay = delay))
+                if (editingDelayIndex >= 0) {
+                    viewModel.updateDelay(editingDelayIndex, delay)
+                } else {
+                    viewModel.addTouchEvent(viewModel.getEmptyTouchEvent().copy(type = 0, delay = delay))
+                }
                 showDelayDialog = false
+                editingDelayIndex = -1
             },
-            onDismiss = { showDelayDialog = false }
+            onDismiss = {
+                showDelayDialog = false
+                editingDelayIndex = -1
+            }
         )
+    }
+
+    if (actionIndex >= 0) {
+        ModalBottomSheet(onDismissRequest = { actionIndex = -1 }) {
+            Column(modifier = Modifier
+                .fillMaxWidth()
+                .padding(bottom = 32.dp)) {
+                SheetOption("删除") {
+                    viewModel.deleteEvent(actionIndex)
+                    actionIndex = -1
+                }
+                SheetOption("复制") {
+                    viewModel.copyEvent(actionIndex)
+                    actionIndex = -1
+                }
+            }
+        }
     }
 }
 
@@ -369,8 +497,12 @@ private fun SheetOption(text: String, onClick: () -> Unit) {
 }
 
 @Composable
-private fun DelayInputDialog(onConfirm: (Long) -> Unit, onDismiss: () -> Unit) {
-    var input by remember { mutableStateOf("") }
+private fun DelayInputDialog(
+    initialValue: String = "",
+    onConfirm: (Long) -> Unit,
+    onDismiss: () -> Unit
+) {
+    var input by remember(initialValue) { mutableStateOf(initialValue) }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("设置延时时长") },
@@ -396,18 +528,48 @@ private fun DelayInputDialog(onConfirm: (Long) -> Unit, onDismiss: () -> Unit) {
     )
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun TouchEventItem(event: SFTouchEvent) {
+private fun TouchEventItem(
+    event: SFTouchEvent,
+    selected: Boolean,
+    onClick: () -> Unit,
+    onLongClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    dragModifier: Modifier = Modifier
+) {
+    val interactionSource = remember { MutableInteractionSource() }
     Card(
-        modifier = Modifier
+        colors = CardDefaults.cardColors(
+            containerColor = if (selected) Color(0xFFD6E4FF) else Color(0xFFF5F5F5)
+        ),
+        modifier = modifier
             .fillMaxWidth()
             .padding(horizontal = 4.dp, vertical = 2.dp)
+            .combinedClickable(
+                interactionSource = interactionSource,
+                indication = null,
+                onClick = onClick,
+                onLongClick = onLongClick
+            )
     ) {
-        Text(
-            text = touchEventText(event),
-            fontSize = 12.sp,
-            modifier = Modifier.padding(6.dp)
-        )
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            //拖动把手：按住上下拖动可调整事件顺序
+            Box(
+                modifier = dragModifier.size(width = 14.dp, height = 24.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(text = "≡", fontSize = 10.sp, color = Color.Gray)
+            }
+            Text(
+                text = touchEventText(event),
+                fontSize = 12.sp,
+                fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
+                modifier = Modifier
+                    .padding(vertical = 6.dp, horizontal = 2.dp)
+                    .weight(1f)
+            )
+        }
     }
 }
 
