@@ -1,87 +1,130 @@
 <?xml version="1.0" encoding="utf-8"?>
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
-    android:layout_width="wrap_content"
-    android:layout_height="match_parent"
     xmlns:app="http://schemas.android.com/apk/res-auto"
-    android:layout_gravity="center"
+    android:layout_width="wrap_content"
+    android:layout_height="wrap_content"
     android:elevation="8dp">
-    <LinearLayout
 
+    <androidx.cardview.widget.CardView
+        android:id="@+id/floating_red_button"
         android:layout_width="wrap_content"
         android:layout_height="60dp"
-        android:layout_gravity="center"
-        android:elevation="8dp"
         android:minWidth="60dp"
-        android:paddingHorizontal="16dp"
-        android:orientation="horizontal"
-        android:gravity="center">
-        <androidx.cardview.widget.CardView
-            android:id="@+id/floating_red_button"
+        app:cardBackgroundColor="#66000000"
+        app:cardCornerRadius="30dp"
+        app:cardElevation="0dp">
+
+        <FrameLayout
             android:layout_width="wrap_content"
-            android:layout_height="60dp"
-            app:cardBackgroundColor="#66000000"
-            android:minWidth="60dp"
-            app:cardCornerRadius="30dp"
-            app:cardElevation="0dp">
-            <LinearLayout
-                android:layout_width="wrap_content"
-                android:orientation="horizontal"
+            android:layout_height="match_parent"
+            android:layout_gravity="center">
+
+            <!-- 初始状态：单个圆形按钮 -->
+            <ImageView
+                android:id="@+id/floating_icon"
+                android:layout_width="60dp"
+                android:layout_height="60dp"
                 android:layout_gravity="center"
-                android:layout_height="wrap_content">
+                android:padding="14dp"
+                android:src="@drawable/ic_microphone"
+                app:tint="@android:color/white" />
+
+            <!-- 展开状态：收起 / 组合 / 录音 -->
+            <LinearLayout
+                android:id="@+id/floating_expanded_container"
+                android:layout_width="wrap_content"
+                android:layout_height="60dp"
+                android:layout_gravity="center"
+                android:gravity="center"
+                android:orientation="horizontal"
+                android:visibility="gone">
+
                 <ImageView
-                    android:padding="10dp"
-                    android:layout_gravity="center"
-                    android:maxWidth="60dp"
-                    android:maxHeight="60dp"
-                    android:src="@drawable/ic_submit"
-                    android:id="@+id/submit_floating_text_button"
-                    android:layout_height="60dp"
+                    android:id="@+id/floating_collapse_button"
                     android:layout_width="60dp"
-                    app:tint="#FFFFFF" />
-                <FrameLayout
-                    android:layout_marginLeft="10dp"
-                    android:layout_marginRight="10dp"
-                    android:layout_gravity="center"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content">
-                    <EditText
-                        android:id="@+id/floating_text"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:textColor="@android:color/white"
-                        android:textSize="18sp"
-                        android:ellipsize="end"
-                        android:visibility="gone"/>
-                    <ImageView
-                        android:id="@+id/floating_icon"
-                        android:layout_width="32dp"
-                        android:layout_height="32dp"
-                        android:src="@drawable/ic_microphone"
-                        app:tint="@android:color/white"/>
-                </FrameLayout>
-                <ImageView
-                    android:padding="15dp"
-                    android:layout_gravity="center"
-                    android:maxWidth="60dp"
-                    android:maxHeight="60dp"
-                    android:src="@drawable/ic_edit"
-                    android:id="@+id/edit_floating_text_button"
                     android:layout_height="60dp"
-                    android:layout_width="60dp"
-                    app:tint="#FFFFFF" />
-                <ImageView
-                    android:padding="15dp"
-                    android:layout_gravity="center"
-                    android:maxWidth="60dp"
-                    android:maxHeight="60dp"
+                    android:padding="16dp"
                     android:src="@drawable/ic_clean"
-                    android:id="@+id/clean_floating_text_button"
-                    android:layout_height="60dp"
+                    app:tint="@android:color/white" />
+
+                <ImageView
+                    android:id="@+id/floating_compose_button"
                     android:layout_width="60dp"
-                    app:tint="#FFFFFF" />
+                    android:layout_height="60dp"
+                    android:padding="16dp"
+                    android:src="@drawable/ic_skills"
+                    app:tint="@android:color/white" />
+
+                <ImageView
+                    android:id="@+id/floating_record_button"
+                    android:layout_width="60dp"
+                    android:layout_height="60dp"
+                    android:padding="14dp"
+                    android:src="@drawable/ic_microphone"
+                    app:tint="@android:color/white" />
             </LinearLayout>
 
+            <!-- 编辑状态：上传 / 指令输入 / 编辑 / 清空 -->
+            <LinearLayout
+                android:id="@+id/floating_edit_container"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="center"
+                android:gravity="center_vertical"
+                android:orientation="horizontal"
+                android:visibility="gone">
 
-        </androidx.cardview.widget.CardView>
-    </LinearLayout>
+                <ImageView
+                    android:id="@+id/submit_floating_text_button"
+                    android:layout_width="60dp"
+                    android:layout_height="60dp"
+                    android:padding="10dp"
+                    android:src="@drawable/ic_submit"
+                    app:tint="@android:color/white" />
+
+                <EditText
+                    android:id="@+id/floating_text"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginHorizontal="8dp"
+                    android:ellipsize="end"
+                    android:textColor="@android:color/white"
+                    android:textSize="18sp" />
+
+                <ImageView
+                    android:id="@+id/edit_floating_text_button"
+                    android:layout_width="60dp"
+                    android:layout_height="60dp"
+                    android:padding="15dp"
+                    android:src="@drawable/ic_edit"
+                    app:tint="@android:color/white" />
+
+                <ImageView
+                    android:id="@+id/clean_floating_text_button"
+                    android:layout_width="60dp"
+                    android:layout_height="60dp"
+                    android:padding="15dp"
+                    android:src="@drawable/ic_clean"
+                    app:tint="@android:color/white" />
+            </LinearLayout>
+        </FrameLayout>
+    </androidx.cardview.widget.CardView>
+
+    <!-- 组合：点击组合按钮后在悬浮按钮底部展示存储的组合列表 -->
+    <ScrollView
+        android:id="@+id/floating_composition_scroll"
+        android:layout_width="220dp"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top|start"
+        android:layout_marginTop="64dp"
+        android:background="@drawable/bg_floating_panel"
+        android:padding="8dp"
+        android:visibility="gone">
+
+        <LinearLayout
+            android:id="@+id/floating_composition_container"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical" />
+    </ScrollView>
 </FrameLayout>

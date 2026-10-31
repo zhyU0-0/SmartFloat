@@ -10,6 +10,14 @@ import android.os.Looper
 import android.util.Log
 import android.view.accessibility.AccessibilityEvent
 import androidx.annotation.RequiresApi
+import com.zyy.smartfloat.database.SFTouchEvent
+import com.zyy.smartfloat.database.SFTouchEventComposition
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
 import java.util.concurrent.Executor
 import kotlin.coroutines.resume
@@ -30,6 +38,11 @@ class TapAccessibilityService : AccessibilityService() {
     }
 
     private val handler = Handler(Looper.getMainLooper())
+    private val gestureScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+
+    // 组合是否正在执行，避免重复触发
+    @Volatile
+    private var isExecutingComposition = false
 
     override fun onServiceConnected() {
         super.onServiceConnected()
@@ -43,6 +56,8 @@ class TapAccessibilityService : AccessibilityService() {
     override fun onInterrupt() {}
 
     override fun onDestroy() {
+        gestureScope.cancel()
+        isExecutingComposition = false
         instance = null
         isRunning = false
         super.onDestroy()
@@ -80,6 +95,88 @@ class TapAccessibilityService : AccessibilityService() {
             }
         }, delayMs)
     }
+
+    /**
+     * 按顺序执行一个组合里的事件：延时 / 点击 / 滑动。
+     * 坐标与设计平台记录的一致，均为屏幕像素坐标。
+     */
+    fun executeComposition(composition: SFTouchEventComposition) {
+        if (isExecutingComposition) {
+            Log.d(TAG, "executeComposition ignored: composition already running")
+            return
+        }
+        if (composition.composition.isEmpty()) {
+            Log.d(TAG, "executeComposition ignored: empty composition")
+            return
+        }
+        isExecutingComposition = true
+        gestureScope.launch {
+            try {
+                for (event in composition.composition) {
+                    executeEvent(event)
+                }
+                Log.d(TAG, "executeComposition finished: ${composition.name}")
+            } catch (e: Exception) {
+                Log.e(TAG, "executeComposition failed: ${e.message}", e)
+            } finally {
+                isExecutingComposition = false
+            }
+        }
+    }
+
+    private suspend fun executeEvent(event: SFTouchEvent) {
+        when (event.type) {
+            0 -> {
+                //延时
+                Log.d(TAG, "delay ${event.delay}ms")
+                delay(event.delay.coerceAtLeast(0L))
+            }
+            1 -> {
+                //点击
+                val path = Path().apply {
+                    moveTo(event.downPosition.x.toFloat(), event.downPosition.y.toFloat())
+                }
+                Log.d(TAG, "tap at (${event.downPosition.x}, ${event.downPosition.y})")
+                dispatchPath(path, 1L)
+            }
+            2 -> {
+                //滑动：down -> 中间采样点 -> up，时长按采样点数量估算
+                val path = Path().apply {
+                    moveTo(event.downPosition.x.toFloat(), event.downPosition.y.toFloat())
+                    event.movePositionList.forEach {
+                        lineTo(it.x.toFloat(), it.y.toFloat())
+                    }
+                    lineTo(event.upPosition.x.toFloat(), event.upPosition.y.toFloat())
+                }
+                val duration = ((event.movePositionList.size + 1) * 16L).coerceIn(50L, 800L)
+                Log.d(TAG, "swipe from (${event.downPosition.x}, ${event.downPosition.y}) " +
+                        "to (${event.upPosition.x}, ${event.upPosition.y}), duration=$duration")
+                dispatchPath(path, duration)
+            }
+        }
+    }
+
+    private suspend fun dispatchPath(path: Path, durationMs: Long): Boolean =
+        suspendCancellableCoroutine { continuation ->
+            val stroke = GestureDescription.StrokeDescription(
+                path, 0, durationMs.coerceAtLeast(1L)
+            )
+            val gesture = GestureDescription.Builder()
+                .addStroke(stroke)
+                .build()
+            val dispatched = dispatchGesture(gesture, object : GestureResultCallback() {
+                override fun onCompleted(gestureDescription: GestureDescription?) {
+                    if (continuation.isActive) continuation.resume(true)
+                }
+
+                override fun onCancelled(gestureDescription: GestureDescription?) {
+                    if (continuation.isActive) continuation.resume(false)
+                }
+            }, handler)
+            if (!dispatched && continuation.isActive) {
+                continuation.resume(false)
+            }
+        }
 
     @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
     suspend fun captureScreenshot(): Bitmap = suspendCancellableCoroutine { continuation ->

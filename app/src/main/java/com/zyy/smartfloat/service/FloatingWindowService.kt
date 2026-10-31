@@ -12,6 +12,7 @@ import android.os.Build
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
+import android.text.TextUtils
 import android.util.Log
 import android.view.Gravity
 import android.view.LayoutInflater
@@ -21,17 +22,25 @@ import android.view.WindowManager
 import android.view.inputmethod.InputMethodManager
 import android.widget.EditText
 import android.widget.ImageView
+import android.widget.LinearLayout
+import android.widget.ScrollView
+import android.widget.TextView
 import android.widget.Toast
 import androidx.cardview.widget.CardView
 import androidx.core.app.NotificationCompat
 import androidx.localbroadcastmanager.content.LocalBroadcastManager
 import com.zyy.smartfloat.NavActivity
 import com.zyy.smartfloat.R
+import com.zyy.smartfloat.database.AppDatabase
+import com.zyy.smartfloat.database.SFTouchEventComposition
 import com.zyy.smartfloat.floatbut.FloatTaskProcessor
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import kotlin.math.roundToInt
 
 /**
  * 悬浮窗前台 Service：只负责悬浮窗视图、触摸交互、通知与生命周期。
@@ -61,9 +70,15 @@ class FloatingWindowService : Service() {
     private var cleanButton: ImageView? = null
     private var editButton: ImageView? = null
     private var submitButton: ImageView? = null
+    private var expandedContainer: View? = null
+    private var editContainer: View? = null
     private var isEditing = false
+    private var isExpanded = false
     private var redButton: CardView? = null
     private var floatLayoutParams: WindowManager.LayoutParams? = null
+    private var compositionScroll: ScrollView? = null
+    private var compositionContainer: LinearLayout? = null
+    private var isCompositionShown = false
 
     // 用于接收从 Intent 传递的问题
     private var llmQuestion: String = ""
@@ -96,7 +111,12 @@ class FloatingWindowService : Service() {
         windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
         processor = FloatTaskProcessor(this, serviceScope, object : FloatTaskProcessor.UiCallback {
             override fun onUpdateFloatingText() {
-                mainHandler.post { updateFloatingText() }
+                mainHandler.post {
+                    //录音结束 / 任务结束：回到初始（收起）状态，并隐藏组合列表
+                    isExpanded = false
+                    hideCompositionList()
+                    updateFloatingText()
+                }
             }
 
             override fun onRedButtonVisibility(visible: Boolean) {
@@ -237,6 +257,12 @@ class FloatingWindowService : Service() {
             cleanButton = floatView!!.findViewById(R.id.clean_floating_text_button)
             editButton = floatView!!.findViewById(R.id.edit_floating_text_button)
             submitButton = floatView!!.findViewById(R.id.submit_floating_text_button)
+            expandedContainer = floatView!!.findViewById(R.id.floating_expanded_container)
+            editContainer = floatView!!.findViewById(R.id.floating_edit_container)
+            redButton = floatView!!.findViewById(R.id.floating_red_button)
+            compositionScroll = floatView!!.findViewById(R.id.floating_composition_scroll)
+            compositionContainer = floatView!!.findViewById(R.id.floating_composition_container)
+            isExpanded = false
             updateFloatingText()
 
             floatingText?.setOnFocusChangeListener { _, hasFocus ->
@@ -301,64 +327,37 @@ class FloatingWindowService : Service() {
                 }
             }
 
-            redButton = floatView!!.findViewById<CardView>(R.id.floating_red_button)
-            redButton?.setOnTouchListener { _, event ->
-                when (event.action) {
-                    MotionEvent.ACTION_DOWN -> {
-                        initialX = layoutParams.x
-                        initialY = layoutParams.y
-                        initialTouchX = event.rawX
-                        initialTouchY = event.rawY
-                        processor.longPressTriggered = false
-                        // 如果正在处理中，不启动长按检测，准备处理点击取消
-                        if (!processor.isProcessing) {
-                            mainHandler.postDelayed(longPressRunnable, LONG_PRESS_THRESHOLD)
+            // 初始状态按钮：点击横向展开为「收起 / 组合 / 录音」
+            floatingIcon?.let { icon ->
+                attachTouchHandler(icon, longPressEnabled = false) { setExpanded(true) }
+            }
+
+            // 收起：回到初始状态，同时隐藏组合列表
+            floatView!!.findViewById<ImageView>(R.id.floating_collapse_button).setOnClickListener {
+                hideCompositionList()
+                setExpanded(false)
+            }
+
+            // 组合：读取数据库中的组合并展示在悬浮按钮底部
+            floatView!!.findViewById<ImageView>(R.id.floating_compose_button).setOnClickListener {
+                toggleCompositionList()
+            }
+
+            // 录音：长按录音（松开结束），拖动可移动悬浮窗
+            floatView!!.findViewById<ImageView>(R.id.floating_record_button).let { recordButton ->
+                attachTouchHandler(recordButton, longPressEnabled = true) { eventTime ->
+                    if (processor.isProcessing) {
+                        // 如果正在处理中，点击按钮取消任务
+                        processor.cancelProcessing()
+                    } else if (!processor.isRecording) {
+                        // 非录音状态：双击关闭悬浮窗
+                        if (eventTime - lastClickTime < DOUBLE_CLICK_INTERVAL) {
+                            lastClickTime = 0
+                            stopService()
+                        } else {
+                            lastClickTime = eventTime
                         }
-                        true
                     }
-                    MotionEvent.ACTION_MOVE -> {
-                        layoutParams.x = initialX + (event.rawX - initialTouchX).toInt()
-                        layoutParams.y = initialY + (event.rawY - initialTouchY).toInt()
-                        Log.d(TAG, "button is MOVE ("+event.rawX+" , "+event.rawY+")")
-                        wm.updateViewLayout(floatView, layoutParams)
-
-                        // 如果移动距离超过阈值，取消长按检测（防止移动时触发录音）
-                        val deltaX = Math.abs(event.rawX - initialTouchX)
-                        val deltaY = Math.abs(event.rawY - initialTouchY)
-                        if (deltaX > 10 || deltaY > 10) {
-                            mainHandler.removeCallbacks(longPressRunnable)
-                        }
-                        true
-                    }
-                    MotionEvent.ACTION_UP -> {
-                        mainHandler.removeCallbacks(longPressRunnable)
-
-                        val deltaX = Math.abs(event.rawX - initialTouchX)
-                        val deltaY = Math.abs(event.rawY - initialTouchY)
-
-                        // 只有当移动距离小于阈值时才认为是点击操作
-                        if (deltaX <= 10 && deltaY <= 10) {
-                            if (processor.isProcessing) {
-                                // 如果正在处理中，点击按钮取消任务
-                                processor.cancelProcessing()
-                            } else if (!processor.isRecording) {
-                                // 非录音状态：双击关闭悬浮窗
-                                if (event.eventTime - lastClickTime < DOUBLE_CLICK_INTERVAL) {
-                                    lastClickTime = 0
-                                    stopService()
-                                } else {
-                                    lastClickTime = event.eventTime
-                                }
-                            }
-                        }
-                        if (processor.longPressTriggered && processor.isRecording) {
-                            // 停止录音并识别
-                            processor.stopRecordingAndRecognize()
-                        }
-
-                        true
-                    }
-                    else -> false
                 }
             }
 
@@ -370,6 +369,147 @@ class FloatingWindowService : Service() {
         }
     }
 
+    /**
+     * 悬浮按钮通用触摸处理：拖动窗口 + 点击回调，长按（longPressEnabled）触发录音。
+     * @param onTap 未发生拖动的点击回调，参数为 eventTime（用于双击检测）
+     */
+    private fun attachTouchHandler(
+        view: View,
+        longPressEnabled: Boolean,
+        onTap: (Long) -> Unit
+    ) {
+        view.setOnTouchListener { _, event ->
+            val params = floatLayoutParams ?: return@setOnTouchListener false
+            when (event.action) {
+                MotionEvent.ACTION_DOWN -> {
+                    initialX = params.x
+                    initialY = params.y
+                    initialTouchX = event.rawX
+                    initialTouchY = event.rawY
+                    processor.longPressTriggered = false
+                    // 如果正在处理中，不启动长按检测，准备处理点击取消
+                    if (longPressEnabled && !processor.isProcessing) {
+                        mainHandler.postDelayed(longPressRunnable, LONG_PRESS_THRESHOLD)
+                    }
+                    true
+                }
+                MotionEvent.ACTION_MOVE -> {
+                    params.x = initialX + (event.rawX - initialTouchX).toInt()
+                    params.y = initialY + (event.rawY - initialTouchY).toInt()
+                    Log.d(TAG, "button is MOVE (" + event.rawX + " , " + event.rawY + ")")
+                    floatView?.let { windowManager?.updateViewLayout(it, params) }
+
+                    // 如果移动距离超过阈值，取消长按检测（防止移动时触发录音）
+                    if (Math.abs(event.rawX - initialTouchX) > 10 || Math.abs(event.rawY - initialTouchY) > 10) {
+                        mainHandler.removeCallbacks(longPressRunnable)
+                    }
+                    true
+                }
+                MotionEvent.ACTION_UP -> {
+                    mainHandler.removeCallbacks(longPressRunnable)
+
+                    val deltaX = Math.abs(event.rawX - initialTouchX)
+                    val deltaY = Math.abs(event.rawY - initialTouchY)
+
+                    // 只有当移动距离小于阈值时才认为是点击操作
+                    if (deltaX <= 10 && deltaY <= 10) {
+                        onTap(event.eventTime)
+                    }
+                    if (processor.longPressTriggered && processor.isRecording) {
+                        // 停止录音并识别
+                        processor.stopRecordingAndRecognize()
+                    }
+                    true
+                }
+                else -> false
+            }
+        }
+    }
+
+    /**
+     * 组合按钮：展开/隐藏底部的组合列表，展开时从数据库读取已存储的组合。
+     */
+    private fun toggleCompositionList() {
+        if (isCompositionShown) {
+            hideCompositionList()
+            return
+        }
+        val container = compositionContainer ?: return
+        container.removeAllViews()
+        compositionScroll?.visibility = View.VISIBLE
+        isCompositionShown = true
+        serviceScope.launch {
+            val compositions = withContext(Dispatchers.IO) {
+                AppDatabase.getInstance(this@FloatingWindowService).getAllCompositions()
+            }
+            mainHandler.post { renderCompositionList(compositions) }
+        }
+    }
+
+    private fun renderCompositionList(compositions: List<SFTouchEventComposition>) {
+        val container = compositionContainer ?: return
+        if (!isCompositionShown) return
+        container.removeAllViews()
+        if (compositions.isEmpty()) {
+            container.addView(createCompositionRow("暂无组合", ""))
+            return
+        }
+        compositions.forEachIndexed { index, composition ->
+            val name = composition.name.ifBlank { "组合 ${index + 1}" }
+            container.addView(
+                createCompositionRow(name, "${composition.composition.size} 个事件", composition)
+            )
+        }
+    }
+
+    private fun createCompositionRow(
+        name: String,
+        countText: String,
+        composition: SFTouchEventComposition? = null
+    ): TextView {
+        return TextView(this).apply {
+            text = if (countText.isEmpty()) name else "$name  ·  $countText"
+            setTextColor(Color.WHITE)
+            textSize = 14f
+            maxLines = 1
+            ellipsize = TextUtils.TruncateAt.END
+            setPadding(dp(8), dp(10), dp(8), dp(10))
+            if (composition != null) {
+                setOnClickListener {
+                    val accessibilityService = TapAccessibilityService.instance
+                    if (accessibilityService == null) {
+                        Toast.makeText(
+                            this@FloatingWindowService,
+                            "无障碍服务未连接",
+                            Toast.LENGTH_SHORT
+                        ).show()
+                    } else {
+                        Toast.makeText(
+                            this@FloatingWindowService,
+                            "执行组合：$name",
+                            Toast.LENGTH_SHORT
+                        ).show()
+                        //收起列表，避免遮挡要点击的位置
+                        hideCompositionList()
+                        accessibilityService.executeComposition(composition)
+                    }
+                }
+            }
+        }
+    }
+
+    private fun hideCompositionList() {
+        isCompositionShown = false
+        compositionScroll?.visibility = View.GONE
+    }
+
+    private fun dp(value: Int): Int = (value * resources.displayMetrics.density).roundToInt()
+
+    private fun setExpanded(expanded: Boolean) {
+        isExpanded = expanded
+        updateFloatingText()
+    }
+
     private val longPressRunnable = Runnable {
         if (!processor.isRecording && processor.recognizedText.isEmpty() && !processor.isProcessing) {
             processor.startRecording()
@@ -377,33 +517,29 @@ class FloatingWindowService : Service() {
     }
 
     private fun updateFloatingText() {
-        if (isEditing) {
-            // 编辑模式：显示EditText
-            floatingText?.visibility = View.VISIBLE
-            floatingIcon?.visibility = View.GONE
-            cleanButton?.visibility = View.VISIBLE
-            editButton?.visibility = View.VISIBLE
-            submitButton?.visibility = View.VISIBLE
-        } else if (processor.recognizedText.isNotEmpty()) {
-            // 有文本但不在编辑模式
-            floatingText?.setText(processor.recognizedText)
-            floatingText?.visibility = View.VISIBLE
-            floatingIcon?.visibility = View.GONE
-            cleanButton?.visibility = View.VISIBLE
-            editButton?.visibility = View.VISIBLE
-            submitButton?.visibility = View.VISIBLE
-        } else {
-            // 无文本且不在编辑模式
-            floatingText?.visibility = View.GONE
-            floatingIcon?.visibility = View.VISIBLE
-            if (processor.isProcessing) {
-                floatingIcon?.setImageResource(R.drawable.ic_stop)
-            } else {
-                floatingIcon?.setImageResource(R.drawable.ic_microphone)
+        if (isEditing || processor.recognizedText.isNotEmpty()) {
+            // 编辑状态：显示指令输入框与上传/编辑/清空按钮
+            if (!isEditing) {
+                floatingText?.setText(processor.recognizedText)
             }
-            cleanButton?.visibility = View.GONE
-            editButton?.visibility = View.GONE
-            submitButton?.visibility = View.GONE
+            floatingText?.visibility = View.VISIBLE
+            floatingIcon?.visibility = View.GONE
+            expandedContainer?.visibility = View.GONE
+            editContainer?.visibility = View.VISIBLE
+        } else {
+            // 非编辑状态：收起时只显示圆形图标，展开时横向显示收起/组合/录音
+            floatingText?.visibility = View.GONE
+            editContainer?.visibility = View.GONE
+            if (isExpanded) {
+                floatingIcon?.visibility = View.GONE
+                expandedContainer?.visibility = View.VISIBLE
+            } else {
+                expandedContainer?.visibility = View.GONE
+                floatingIcon?.visibility = View.VISIBLE
+                floatingIcon?.setImageResource(
+                    if (processor.isProcessing) R.drawable.ic_stop else R.drawable.ic_microphone
+                )
+            }
         }
     }
 
