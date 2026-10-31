@@ -582,7 +582,7 @@ fun FloatingButtonScreen(
                 elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
                 modifier = Modifier
                     .fillMaxWidth()
-                    .pointerInput(Unit) {
+                    .pointerInput(isFloatingShowing) {
                         detectTapGestures(
                             onTap = {
                                 if (isFloatingShowing) {
