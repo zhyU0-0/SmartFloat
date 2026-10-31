@@ -1,5 +1,6 @@
 package com.zyy.smartfloat.skills
 
+import android.content.Intent
 import android.util.Log
 import android.widget.Toast
 import androidx.compose.foundation.layout.*
@@ -119,6 +120,12 @@ fun SkillsManagerScreen(
                     fontSize = 24.sp,
                     fontWeight = FontWeight.Bold
                 )
+                Button(onClick = {
+                    //跳转到事件设计页面
+                    context.startActivity(Intent(context, TouchDesignActivity::class.java))
+                }) {
+                    Text("管理组合")
+                }
                 Button(onClick = {
                     showEditor = true
                 }) {

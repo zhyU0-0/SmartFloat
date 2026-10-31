@@ -104,4 +104,8 @@ class SkillsManagerViewModel : ViewModel() {
         clipboard.setPrimaryClip(newClip)
     }
 
+    fun gotoTouchDesignActivity(){
+
+    }
+
 }
