@@ -18,7 +18,7 @@ class AppDatabase(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME, n
 
     companion object {
         private const val DATABASE_NAME = "smart_float.db"
-        private const val DATABASE_VERSION = 4
+        private const val DATABASE_VERSION = 6
 
         // ModelConfig 表
         private const val TABLE_MODEL_CONFIG = "model_config"
@@ -54,6 +54,15 @@ class AppDatabase(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME, n
         private const val COL_COMPOSITION_NAME = "name"
         private const val COL_COMPOSITION_EVENTS = "events"
         private const val COL_COMPOSITION_CREATED_AT = "createdAt"
+
+        // Skill-Composition 关联表
+        private const val TABLE_SKILL_COMPOSITION = "skill_composition"
+        private const val COL_SC_ID = "id"
+        private const val COL_SC_SKILL_ID = "skillId"
+        private const val COL_SC_COMPOSITION_ID = "compositionId"
+        private const val COL_SC_COMPOSITION_NAME = "compositionName"
+        private const val COL_SC_DESCRIPTION = "description"
+        private const val COL_SC_CREATED_AT = "createdAt"
 
 
         @Volatile
@@ -116,10 +125,23 @@ class AppDatabase(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME, n
                 $COL_COMPOSITION_CREATED_AT INTEGER NOT NULL
             )""".trimIndent()
 
+        val createSkillComposition = """
+            CREATE TABLE IF NOT EXISTS $TABLE_SKILL_COMPOSITION (
+                $COL_SC_ID INTEGER PRIMARY KEY AUTOINCREMENT,
+                $COL_SC_SKILL_ID INTEGER NOT NULL,
+                $COL_SC_COMPOSITION_ID INTEGER NOT NULL,
+                $COL_SC_COMPOSITION_NAME TEXT,
+                $COL_SC_DESCRIPTION TEXT,
+                $COL_SC_CREATED_AT INTEGER NOT NULL,
+                FOREIGN KEY ($COL_SC_SKILL_ID) REFERENCES $TABLE_SKILL($COL_SKILL_ID),
+                FOREIGN KEY ($COL_SC_COMPOSITION_ID) REFERENCES $TABLE_TOUCH_COMPOSITION($COL_COMPOSITION_ID)
+            )""".trimIndent()
+
         db.execSQL(createModelConfig)
         db.execSQL(createConversation)
         db.execSQL(createSkills)
         db.execSQL(createTouchComposition)
+        db.execSQL(createSkillComposition)
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
@@ -133,6 +155,32 @@ class AppDatabase(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME, n
                 $COL_COMPOSITION_CREATED_AT INTEGER NOT NULL
             )"""
             )
+        }
+        if (oldVersion < 5) {
+            // 创建技能-组合关联表
+            db.execSQL("""
+            CREATE TABLE IF NOT EXISTS $TABLE_SKILL_COMPOSITION (
+                $COL_SC_ID INTEGER PRIMARY KEY AUTOINCREMENT,
+                $COL_SC_SKILL_ID INTEGER NOT NULL,
+                $COL_SC_COMPOSITION_ID INTEGER NOT NULL,
+                $COL_SC_COMPOSITION_NAME TEXT,
+                $COL_SC_DESCRIPTION TEXT,
+                $COL_SC_CREATED_AT INTEGER NOT NULL
+            )"""
+            )
+        }
+        if (oldVersion < 6) {
+            // 在关联表增加组合名称字段（冗余存储，避免 JOIN）
+            db.execSQL("ALTER TABLE $TABLE_SKILL_COMPOSITION ADD COLUMN $COL_SC_COMPOSITION_NAME TEXT")
+            // 回填已有记录的组合名称
+            db.execSQL("""
+                UPDATE $TABLE_SKILL_COMPOSITION
+                SET $COL_SC_COMPOSITION_NAME = (
+                    SELECT tc.$COL_COMPOSITION_NAME
+                    FROM $TABLE_TOUCH_COMPOSITION tc
+                    WHERE tc.$COL_COMPOSITION_ID = $TABLE_SKILL_COMPOSITION.$COL_SC_COMPOSITION_ID
+                )
+            """)
         }
     }
 
@@ -553,5 +601,102 @@ class AppDatabase(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME, n
         }
         cursor.close()
         return list
+    }
+
+    // ==================== Skill-Composition 关联表操作 ====================
+
+    fun addSkillComposition(skillId: Long, compositionId: Long, compositionName: String? = null, description: String? = null): Long {
+        val db = writableDatabase
+        val values = ContentValues().apply {
+            put(COL_SC_SKILL_ID, skillId)
+            put(COL_SC_COMPOSITION_ID, compositionId)
+            put(COL_SC_COMPOSITION_NAME, compositionName)
+            put(COL_SC_DESCRIPTION, description)
+            put(COL_SC_CREATED_AT, System.currentTimeMillis())
+        }
+        return db.insert(TABLE_SKILL_COMPOSITION, null, values)
+    }
+
+    fun updateSkillCompositionName(relationId: Long, compositionName: String): Int {
+        val db = writableDatabase
+        val values = ContentValues().apply {
+            put(COL_SC_COMPOSITION_NAME, compositionName)
+        }
+        return db.update(
+            TABLE_SKILL_COMPOSITION, values,
+            "$COL_SC_ID = ?", arrayOf(relationId.toString())
+        )
+    }
+
+    fun updateSkillComposition(relationId: Long, description: String): Int {
+        val db = writableDatabase
+        val values = ContentValues().apply {
+            put(COL_SC_DESCRIPTION, description)
+        }
+        return db.update(
+            TABLE_SKILL_COMPOSITION, values,
+            "$COL_SC_ID = ?", arrayOf(relationId.toString())
+        )
+    }
+
+    fun deleteSkillComposition(relationId: Long): Int {
+        val db = writableDatabase
+        return db.delete(
+            TABLE_SKILL_COMPOSITION,
+            "$COL_SC_ID = ?", arrayOf(relationId.toString())
+        )
+    }
+
+    fun getCompositionsBySkillId(skillId: Long): List<SkillCompositionDetail> {
+        val db = readableDatabase
+        val sql = """
+            SELECT 
+                sc.$COL_SC_ID as relationId,
+                sc.$COL_SC_COMPOSITION_ID as compositionId,
+                COALESCE(sc.$COL_SC_COMPOSITION_NAME, tc.$COL_COMPOSITION_NAME) as compositionName,
+                tc.$COL_COMPOSITION_EVENTS as events,
+                sc.$COL_SC_DESCRIPTION as description
+            FROM $TABLE_SKILL_COMPOSITION sc
+            LEFT JOIN $TABLE_TOUCH_COMPOSITION tc ON sc.$COL_SC_COMPOSITION_ID = tc.$COL_COMPOSITION_ID
+            WHERE sc.$COL_SC_SKILL_ID = ?
+            ORDER BY sc.$COL_SC_CREATED_AT ASC
+        """.trimIndent()
+        val cursor = db.rawQuery(sql, arrayOf(skillId.toString()))
+        val list = mutableListOf<SkillCompositionDetail>()
+        while (cursor.moveToNext()) {
+            val eventsRaw = cursor.getString(cursor.getColumnIndexOrThrow("events"))
+            val eventsCount = try {
+                if (eventsRaw.isNullOrEmpty()) 0
+                else {
+                    val events: List<SFTouchEvent> = gson.fromJson(eventsRaw, eventListType) ?: emptyList()
+                    events.size
+                }
+            } catch (e: Exception) {
+                0
+            }
+            list.add(
+                SkillCompositionDetail(
+                    relationId = cursor.getLong(cursor.getColumnIndexOrThrow("relationId")),
+                    compositionId = cursor.getLong(cursor.getColumnIndexOrThrow("compositionId")),
+                    compositionName = cursor.getString(cursor.getColumnIndexOrThrow("compositionName")) ?: "",
+                    eventsCount = eventsCount,
+                    description = cursor.getString(cursor.getColumnIndexOrThrow("description"))
+                )
+            )
+        }
+        cursor.close()
+        return list
+    }
+
+    fun clearCompositionsBySkillId(skillId: Long): Int {
+        val db = writableDatabase
+        return db.delete(
+            TABLE_SKILL_COMPOSITION,
+            "$COL_SC_SKILL_ID = ?", arrayOf(skillId.toString())
+        )
+    }
+
+    fun deleteSkillCompositionsWhenSkillDeleted(skillId: Long) {
+        clearCompositionsBySkillId(skillId)
     }
 }
