@@ -491,51 +491,53 @@ fun FloatingButtonScreen(
             }
         }
 
-        // Accessibility Warning Card
-        if (!isAccessibilityEnabled) {
-            item {
-                Card(
-                    colors = CardDefaults.cardColors(
-                        containerColor = Color(0xFFFFF3E0)
-                    ),
-                    shape = RoundedCornerShape(16.dp),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+        // Accessibility Status Card
+        item {
+            Card(
+                colors = CardDefaults.cardColors(
+                    containerColor = if (isAccessibilityEnabled) Color(0xFFE8F5E9) else Color(0xFFFFF3E0)
+                ),
+                shape = RoundedCornerShape(16.dp),
+                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
                     Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(16.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.weight(1f)
                     ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.weight(1f)
-                        ) {
-                            Image(
-                                painter = painterResource(id = R.drawable.ic_refresh),//Refresh
-                                contentDescription = null,
-                                colorFilter = ColorFilter.tint(Color(0xFFFF9800)),  // 着色
-                                modifier = Modifier.size(20.dp)
+                        Image(
+                            painter = painterResource(id = R.drawable.ic_refresh),
+                            contentDescription = null,
+                            colorFilter = ColorFilter.tint(
+                                if (isAccessibilityEnabled) Color(0xFF4CAF50) else Color(0xFFFF9800)
+                            ),
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Column {
+                            Text(
+                                text = if (isAccessibilityEnabled) "无障碍服务已开启" else "无障碍服务未开启",
+                                color = if (isAccessibilityEnabled) Color(0xFF2E7D32) else Color(0xFFE65100),
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Bold
                             )
-                            Spacer(modifier = Modifier.width(12.dp))
-                            Column {
-                                Text(
-                                    text = "无障碍服务未开启",
-                                    color = Color(0xFFE65100),
-                                    fontSize = 14.sp,
-                                    fontWeight = FontWeight.Bold
-                                )
-                                Text(
-                                    text = "模拟点击功能将无法使用",
-                                    color = Color(0xFFBF360C),
-                                    fontSize = 12.sp
-                                )
-                            }
+                            Text(
+                                text = if (isAccessibilityEnabled) "模拟点击功能可正常使用" else "模拟点击功能将无法使用",
+                                color = if (isAccessibilityEnabled) Color(0xFF388E3C) else Color(0xFFBF360C),
+                                fontSize = 12.sp
+                            )
                         }
-                        Row(
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
+                    }
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        if (!isAccessibilityEnabled) {
                             Button(
                                 onClick = {
                                     val intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
@@ -550,19 +552,21 @@ fun FloatingButtonScreen(
                             ) {
                                 Text("开启", fontSize = 13.sp)
                             }
-                            IconButton(
-                                onClick = {
-                                    isAccessibilityEnabled = isAccessibilityServiceEnabled(context)
-                                },
-                                modifier = Modifier.size(36.dp)
-                            ) {
-                                Image(
-                                    painter = painterResource(id = R.drawable.ic_refresh),//Refresh
-                                    contentDescription = null,
-                                    colorFilter = ColorFilter.tint(Color(0xFF999999)),  // 着色
-                                    modifier = Modifier.size(20.dp)
-                                )
-                            }
+                        }
+                        IconButton(
+                            onClick = {
+                                isAccessibilityEnabled = isAccessibilityServiceEnabled(context)
+                            },
+                            modifier = Modifier.size(36.dp)
+                        ) {
+                            Image(
+                                painter = painterResource(id = R.drawable.ic_refresh),
+                                contentDescription = null,
+                                colorFilter = ColorFilter.tint(
+                                    if (isAccessibilityEnabled) Color(0xFF4CAF50) else Color(0xFF999999)
+                                ),
+                                modifier = Modifier.size(20.dp)
+                            )
                         }
                     }
                 }
