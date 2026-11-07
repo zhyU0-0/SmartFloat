@@ -18,7 +18,7 @@ class AppDatabase(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME, n
 
     companion object {
         private const val DATABASE_NAME = "smart_float.db"
-        private const val DATABASE_VERSION = 6
+        private const val DATABASE_VERSION = 7
 
         // ModelConfig 表
         private const val TABLE_MODEL_CONFIG = "model_config"
@@ -44,7 +44,6 @@ class AppDatabase(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME, n
         private const val COL_SKILL_ID = "id"
         private const val COL_SKILL_NAME = "skillsName"
         private const val COL_SKILL_CONTENT = "content"
-        private const val COL_SKILL_CLICKING_TIPS = "clickingTips"
         private const val COL_SKILL_IS_ACTIVE = "isActive"
         private const val COL_SKILL_CREATED_AT = "createdAt"
 
@@ -53,6 +52,7 @@ class AppDatabase(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME, n
         private const val COL_COMPOSITION_ID = "id"
         private const val COL_COMPOSITION_NAME = "name"
         private const val COL_COMPOSITION_EVENTS = "events"
+        private const val COL_COMPOSITION_IS_LANDSCAPE = "isLandscape"
         private const val COL_COMPOSITION_CREATED_AT = "createdAt"
 
         // Skill-Composition 关联表
@@ -62,6 +62,7 @@ class AppDatabase(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME, n
         private const val COL_SC_COMPOSITION_ID = "compositionId"
         private const val COL_SC_COMPOSITION_NAME = "compositionName"
         private const val COL_SC_DESCRIPTION = "description"
+        private const val COL_SC_IS_LANDSCAPE = "isLandscape"
         private const val COL_SC_CREATED_AT = "createdAt"
 
 
@@ -112,7 +113,6 @@ class AppDatabase(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME, n
                 $COL_SKILL_ID INTEGER PRIMARY KEY AUTOINCREMENT,
                 $COL_SKILL_NAME TEXT NOT NULL,
                 $COL_SKILL_CONTENT TEXT,
-                $COL_SKILL_CLICKING_TIPS TEXT,
                 $COL_SKILL_IS_ACTIVE INTEGER NOT NULL DEFAULT 0,
                 $COL_SKILL_CREATED_AT INTEGER NOT NULL
             )""".trimIndent()
@@ -121,6 +121,7 @@ class AppDatabase(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME, n
             CREATE TABLE IF NOT EXISTS $TABLE_TOUCH_COMPOSITION (
                 $COL_COMPOSITION_ID INTEGER PRIMARY KEY AUTOINCREMENT,
                 $COL_COMPOSITION_NAME TEXT NOT NULL,
+                $COL_COMPOSITION_IS_LANDSCAPE INTEGER NOT NULL DEFAULT 0,
                 $COL_COMPOSITION_EVENTS TEXT NOT NULL,
                 $COL_COMPOSITION_CREATED_AT INTEGER NOT NULL
             )""".trimIndent()
@@ -132,6 +133,7 @@ class AppDatabase(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME, n
                 $COL_SC_COMPOSITION_ID INTEGER NOT NULL,
                 $COL_SC_COMPOSITION_NAME TEXT,
                 $COL_SC_DESCRIPTION TEXT,
+                $COL_SC_IS_LANDSCAPE INTEGER NOT NULL DEFAULT 0,
                 $COL_SC_CREATED_AT INTEGER NOT NULL,
                 FOREIGN KEY ($COL_SC_SKILL_ID) REFERENCES $TABLE_SKILL($COL_SKILL_ID),
                 FOREIGN KEY ($COL_SC_COMPOSITION_ID) REFERENCES $TABLE_TOUCH_COMPOSITION($COL_COMPOSITION_ID)
@@ -151,6 +153,7 @@ class AppDatabase(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME, n
             CREATE TABLE IF NOT EXISTS $TABLE_TOUCH_COMPOSITION (
                 $COL_COMPOSITION_ID INTEGER PRIMARY KEY AUTOINCREMENT,
                 $COL_COMPOSITION_NAME TEXT NOT NULL,
+                $COL_COMPOSITION_IS_LANDSCAPE INTEGER NOT NULL DEFAULT 0,
                 $COL_COMPOSITION_EVENTS TEXT NOT NULL,
                 $COL_COMPOSITION_CREATED_AT INTEGER NOT NULL
             )"""
@@ -165,6 +168,7 @@ class AppDatabase(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME, n
                 $COL_SC_COMPOSITION_ID INTEGER NOT NULL,
                 $COL_SC_COMPOSITION_NAME TEXT,
                 $COL_SC_DESCRIPTION TEXT,
+                $COL_SC_IS_LANDSCAPE INTEGER NOT NULL DEFAULT 0,
                 $COL_SC_CREATED_AT INTEGER NOT NULL
             )"""
             )
@@ -181,6 +185,44 @@ class AppDatabase(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME, n
                     WHERE tc.$COL_COMPOSITION_ID = $TABLE_SKILL_COMPOSITION.$COL_SC_COMPOSITION_ID
                 )
             """)
+        }
+        if (oldVersion < 7) {
+            // 组合表增加横竖屏标识
+            if (oldVersion >= 4) {
+                db.execSQL("ALTER TABLE $TABLE_TOUCH_COMPOSITION ADD COLUMN $COL_COMPOSITION_IS_LANDSCAPE INTEGER NOT NULL DEFAULT 0")
+            }
+            // 技能-组合关联表增加横竖屏标识，并回填对应组合的方向
+            if (oldVersion >= 5) {
+                db.execSQL("ALTER TABLE $TABLE_SKILL_COMPOSITION ADD COLUMN $COL_SC_IS_LANDSCAPE INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("""
+                    UPDATE $TABLE_SKILL_COMPOSITION
+                    SET $COL_SC_IS_LANDSCAPE = (
+                        SELECT tc.$COL_COMPOSITION_IS_LANDSCAPE
+                        FROM $TABLE_TOUCH_COMPOSITION tc
+                        WHERE tc.$COL_COMPOSITION_ID = $TABLE_SKILL_COMPOSITION.$COL_SC_COMPOSITION_ID
+                    )
+                """)
+            }
+            // 删除已废弃的点击要点字段：通过重建表实现（兼容低版本 SQLite 不支持 DROP COLUMN）
+            val tempTable = "${TABLE_SKILL}_new"
+            db.execSQL("""
+                CREATE TABLE $tempTable (
+                    $COL_SKILL_ID INTEGER PRIMARY KEY AUTOINCREMENT,
+                    $COL_SKILL_NAME TEXT NOT NULL,
+                    $COL_SKILL_CONTENT TEXT,
+                    $COL_SKILL_IS_ACTIVE INTEGER NOT NULL DEFAULT 0,
+                    $COL_SKILL_CREATED_AT INTEGER NOT NULL
+                )
+            """)
+            db.execSQL("""
+                INSERT INTO $tempTable (
+                    $COL_SKILL_ID, $COL_SKILL_NAME, $COL_SKILL_CONTENT, $COL_SKILL_IS_ACTIVE, $COL_SKILL_CREATED_AT
+                )
+                SELECT $COL_SKILL_ID, $COL_SKILL_NAME, $COL_SKILL_CONTENT, $COL_SKILL_IS_ACTIVE, $COL_SKILL_CREATED_AT
+                FROM $TABLE_SKILL
+            """)
+            db.execSQL("DROP TABLE $TABLE_SKILL")
+            db.execSQL("ALTER TABLE $tempTable RENAME TO $TABLE_SKILL")
         }
     }
 
@@ -284,7 +326,6 @@ class AppDatabase(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME, n
         val values = ContentValues().apply {
             put(COL_SKILL_NAME, skill.skillsName)
             put(COL_SKILL_CONTENT, skill.content)
-            put(COL_SKILL_CLICKING_TIPS, skill.clickingTips)
             put(COL_SKILL_IS_ACTIVE, if (skill.isActive) 1 else 0)
             put(COL_SKILL_CREATED_AT, skill.createdAt)
         }
@@ -296,7 +337,6 @@ class AppDatabase(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME, n
         val values = ContentValues().apply {
             put(COL_SKILL_NAME, skill.skillsName)
             put(COL_SKILL_CONTENT, skill.content)
-            put(COL_SKILL_CLICKING_TIPS, skill.clickingTips)
             put(COL_SKILL_IS_ACTIVE, if (skill.isActive) 1 else 0)
         }
         return db.update(TABLE_SKILL, values, "$COL_SKILL_ID = ?", arrayOf(skill.id.toString()))
@@ -361,7 +401,6 @@ class AppDatabase(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME, n
                     id = cursor.getLong(cursor.getColumnIndexOrThrow(COL_SKILL_ID)),
                     skillsName = cursor.getString(cursor.getColumnIndexOrThrow(COL_SKILL_NAME)),
                     content = cursor.getString(cursor.getColumnIndexOrThrow(COL_SKILL_CONTENT)),
-                    clickingTips = cursor.getString(cursor.getColumnIndexOrThrow(COL_SKILL_CLICKING_TIPS)),
                     isActive = cursor.getInt(cursor.getColumnIndexOrThrow(COL_SKILL_IS_ACTIVE)) != 0,
                     createdAt = cursor.getLong(cursor.getColumnIndexOrThrow(COL_SKILL_CREATED_AT))
                 )
@@ -544,6 +583,7 @@ class AppDatabase(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME, n
         val db = writableDatabase
         val values = ContentValues().apply {
             put(COL_COMPOSITION_NAME, composition.name)
+            put(COL_COMPOSITION_IS_LANDSCAPE, if (composition.isLandscape) 1 else 0)
             put(COL_COMPOSITION_EVENTS, gson.toJson(composition.composition, eventListType))
             put(COL_COMPOSITION_CREATED_AT, System.currentTimeMillis())
         }
@@ -555,6 +595,7 @@ class AppDatabase(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME, n
         val db = writableDatabase
         val values = ContentValues().apply {
             put(COL_COMPOSITION_NAME, composition.name)
+            put(COL_COMPOSITION_IS_LANDSCAPE, if (composition.isLandscape) 1 else 0)
             put(COL_COMPOSITION_EVENTS, gson.toJson(composition.composition, eventListType))
         }
         return db.update(
@@ -589,6 +630,7 @@ class AppDatabase(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME, n
         val sql = """
             SELECT tc.$COL_COMPOSITION_ID AS $COL_COMPOSITION_ID,
                    COALESCE(sc.$COL_SC_COMPOSITION_NAME, tc.$COL_COMPOSITION_NAME) AS $COL_COMPOSITION_NAME,
+                   sc.$COL_SC_IS_LANDSCAPE AS $COL_COMPOSITION_IS_LANDSCAPE,
                    tc.$COL_COMPOSITION_EVENTS AS $COL_COMPOSITION_EVENTS
             FROM $TABLE_SKILL_COMPOSITION sc
             INNER JOIN $TABLE_TOUCH_COMPOSITION tc
@@ -614,6 +656,7 @@ class AppDatabase(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME, n
                 SFTouchEventComposition(
                     id = cursor.getLong(cursor.getColumnIndexOrThrow(COL_COMPOSITION_ID)),
                     name = cursor.getString(cursor.getColumnIndexOrThrow(COL_COMPOSITION_NAME)),
+                    isLandscape = cursor.getInt(cursor.getColumnIndexOrThrow(COL_COMPOSITION_IS_LANDSCAPE)) != 0,
                     composition = events
                 )
             )
@@ -624,13 +667,20 @@ class AppDatabase(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME, n
 
     // ==================== Skill-Composition 关联表操作 ====================
 
-    fun addSkillComposition(skillId: Long, compositionId: Long, compositionName: String? = null, description: String? = null): Long {
+    fun addSkillComposition(
+        skillId: Long,
+        compositionId: Long,
+        compositionName: String? = null,
+        description: String? = null,
+        isLandscape: Boolean = false
+    ): Long {
         val db = writableDatabase
         val values = ContentValues().apply {
             put(COL_SC_SKILL_ID, skillId)
             put(COL_SC_COMPOSITION_ID, compositionId)
             put(COL_SC_COMPOSITION_NAME, compositionName)
             put(COL_SC_DESCRIPTION, description)
+            put(COL_SC_IS_LANDSCAPE, if (isLandscape) 1 else 0)
             put(COL_SC_CREATED_AT, System.currentTimeMillis())
         }
         return db.insert(TABLE_SKILL_COMPOSITION, null, values)
@@ -647,10 +697,11 @@ class AppDatabase(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME, n
         )
     }
 
-    fun updateSkillComposition(relationId: Long, description: String): Int {
+    fun updateSkillComposition(relationId: Long, description: String, isLandscape: Boolean = false): Int {
         val db = writableDatabase
         val values = ContentValues().apply {
             put(COL_SC_DESCRIPTION, description)
+            put(COL_SC_IS_LANDSCAPE, if (isLandscape) 1 else 0)
         }
         return db.update(
             TABLE_SKILL_COMPOSITION, values,
@@ -674,7 +725,8 @@ class AppDatabase(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME, n
                 sc.$COL_SC_COMPOSITION_ID as compositionId,
                 COALESCE(sc.$COL_SC_COMPOSITION_NAME, tc.$COL_COMPOSITION_NAME) as compositionName,
                 tc.$COL_COMPOSITION_EVENTS as events,
-                sc.$COL_SC_DESCRIPTION as description
+                sc.$COL_SC_DESCRIPTION as description,
+                sc.$COL_SC_IS_LANDSCAPE as isLandscape
             FROM $TABLE_SKILL_COMPOSITION sc
             LEFT JOIN $TABLE_TOUCH_COMPOSITION tc ON sc.$COL_SC_COMPOSITION_ID = tc.$COL_COMPOSITION_ID
             WHERE sc.$COL_SC_SKILL_ID = ?
@@ -699,7 +751,8 @@ class AppDatabase(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME, n
                     compositionId = cursor.getLong(cursor.getColumnIndexOrThrow("compositionId")),
                     compositionName = cursor.getString(cursor.getColumnIndexOrThrow("compositionName")) ?: "",
                     eventsCount = eventsCount,
-                    description = cursor.getString(cursor.getColumnIndexOrThrow("description"))
+                    description = cursor.getString(cursor.getColumnIndexOrThrow("description")),
+                    isLandscape = cursor.getInt(cursor.getColumnIndexOrThrow("isLandscape")) != 0
                 )
             )
         }

@@ -23,7 +23,8 @@ data class SkillCompositionDetail(
     val compositionId: Long,
     val compositionName: String,
     val eventsCount: Int,
-    val description: String?
+    val description: String?,
+    val isLandscape: Boolean = false
 )
 
 /**
@@ -34,5 +35,6 @@ data class SkillCompositionInput(
     val relationId: Long?,
     val compositionId: Long,
     val compositionName: String,
-    val description: String?
+    val description: String?,
+    val isLandscape: Boolean = false
 )

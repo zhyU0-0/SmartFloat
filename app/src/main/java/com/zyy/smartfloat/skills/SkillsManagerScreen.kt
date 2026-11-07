@@ -45,7 +45,6 @@ fun SkillsManagerScreen(
     var editingSkillId by remember { mutableStateOf<Long?>(null) }
     var newSkillsName by remember { mutableStateOf("") }
     var newContent by remember { mutableStateOf("") }
-    var newClickingTips by remember { mutableStateOf("") }
 
     // 组合选择相关状态
     var showCompositionPicker by remember { mutableStateOf(false) }
@@ -69,7 +68,8 @@ fun SkillsManagerScreen(
                     compositionId = detail.compositionId,
                     name = detail.compositionName,
                     eventsCount = detail.eventsCount,
-                    description = detail.description ?: ""
+                    description = detail.description ?: "",
+                    isLandscape = detail.isLandscape
                 )
             }
         }
@@ -83,8 +83,6 @@ fun SkillsManagerScreen(
             onSkillsNameChange = { newSkillsName = it },
             content = newContent,
             onContentChange = { newContent = it },
-            clickingTips = newClickingTips,
-            onClickingTipsChange = { newClickingTips = it },
             // 组合相关
             compositions = editingCompositions,
             onShowCompositionPicker = {
@@ -111,14 +109,13 @@ fun SkillsManagerScreen(
                     } else {
                         newSkillsName = addSkill.skillsName
                         newContent = addSkill.content ?: ""
-                        newClickingTips = addSkill.clickingTips ?: ""
                     }
                 }
             },
             onCopy = {
                 viewModel.copyAddSkill(
                     context,
-                    AddSkills(newSkillsName, newContent, newClickingTips)
+                    AddSkills(newSkillsName, newContent)
                 )
             },
             onSave = {
@@ -127,20 +124,19 @@ fun SkillsManagerScreen(
                         editingSkillId = editingSkillId,
                         skillsName = newSkillsName,
                         content = newContent,
-                        clickingTips = newClickingTips,
                         compositions = editingCompositions.map {
                             SkillCompositionInput(
                                 relationId = it.relationId,
                                 compositionId = it.compositionId,
                                 compositionName = it.name,
-                                description = it.description.ifBlank { null }
+                                description = it.description.ifBlank { null },
+                                isLandscape = it.isLandscape
                             )
                         }
                     )
                     // 延迟关闭页面，等待数据库操作完成
                     newSkillsName = ""
                     newContent = ""
-                    newClickingTips = ""
                     editingSkillId = null
                     editingCompositions = emptyList()
                     showEditor = false
@@ -149,7 +145,6 @@ fun SkillsManagerScreen(
             onBack = {
                 newSkillsName = ""
                 newContent = ""
-                newClickingTips = ""
                 editingSkillId = null
                 editingCompositions = emptyList()
                 showEditor = false
@@ -172,7 +167,8 @@ fun SkillsManagerScreen(
                         compositionId = composition.id,
                         name = composition.name,
                         eventsCount = composition.composition.size,
-                        description = ""
+                        description = "",
+                        isLandscape = composition.isLandscape
                     )
                     Toast.makeText(context, "已添加组合：${composition.name}", Toast.LENGTH_SHORT).show()
                     showCompositionPicker = false
@@ -269,7 +265,6 @@ fun SkillsManagerScreen(
                                 editingSkillId = skill.id
                                 newSkillsName = skill.skillsName
                                 newContent = skill.content ?: ""
-                                newClickingTips = skill.clickingTips ?: ""
                                 showEditor = true
                             }
                         )
@@ -288,7 +283,8 @@ data class EditingComposition(
     val compositionId: Long,
     val name: String,
     val eventsCount: Int,
-    val description: String
+    val description: String,
+    val isLandscape: Boolean = false
 )
 
 /**
@@ -433,8 +429,6 @@ fun SkillEditorPage(
     onSkillsNameChange: (String) -> Unit,
     content: String,
     onContentChange: (String) -> Unit,
-    clickingTips: String,
-    onClickingTipsChange: (String) -> Unit,
     // 组合相关
     compositions: List<EditingComposition>,
     onShowCompositionPicker: () -> Unit,
@@ -523,22 +517,6 @@ fun SkillEditorPage(
                     .heightIn(min = 180.dp),
                 placeholder = { Text("例如：你正在下象棋，你先分析当前局势，然后走出你觉得最棒的一步") },
                 minLines = 5
-            )
-
-            // 点击要点（加大，随内容自动增高）
-            Text(
-                text = "点击要点",
-                fontSize = 14.sp,
-                fontWeight = FontWeight.Medium
-            )
-            OutlinedTextField(
-                value = clickingTips,
-                onValueChange = onClickingTipsChange,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(min = 120.dp),
-                placeholder = { Text("例如：先点击要走的棋子，然后点击棋子的落点") },
-                minLines = 4
             )
 
             // ===== 组合关联区域 =====

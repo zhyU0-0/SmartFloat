@@ -61,12 +61,12 @@ class TouchDesignViewModel : ViewModel() {
         }
     }
 
-    fun addComposition(name: String){
+    fun addComposition(name: String, isLandscape: Boolean = false){
         //1. 先把当前事件列表保存回当前组合，并更新数据库
         saveCurrentEventsToComposition()
         //2. 创建新组合，写入数据库
         val finalName = name.trim().ifEmpty { "组合 ${_touchEventCompositions.value.size + 1}" }
-        val newComposition = SFTouchEventComposition(name = finalName, composition = emptyList())
+        val newComposition = SFTouchEventComposition(name = finalName, isLandscape = isLandscape, composition = emptyList())
         val id = database.insertComposition(newComposition)
         //3. 选中新组合，事件列表切换为新组合（空）
         _touchEventCompositions.value = _touchEventCompositions.value + newComposition.copy(id = id)

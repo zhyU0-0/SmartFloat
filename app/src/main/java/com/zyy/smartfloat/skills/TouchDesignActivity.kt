@@ -16,7 +16,9 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -38,6 +40,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
@@ -68,6 +71,7 @@ import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
@@ -126,6 +130,18 @@ fun DesignWorkspace(
     val screenWidth = context.resources.displayMetrics.widthPixels
     val screenHeight = context.resources.displayMetrics.heightPixels
     val currentEvent by viewModel.touchEvent.collectAsState()
+    val compositions by viewModel.touchEventCompositions.collectAsState()
+    val selectedCompositionIndex by viewModel.selectedCompositionIndex.collectAsState()
+
+    //当前设备方向与选中组合的方向是否冲突
+    val isDeviceLandscape = screenWidth > screenHeight
+    val currentComposition = compositions.getOrNull(selectedCompositionIndex)
+    val isOrientationMismatch = currentComposition != null &&
+            currentComposition.isLandscape != isDeviceLandscape
+
+    //方向不匹配时交换宽高，让组合的坐标范围保持原样
+    val canvasWidth = if (isOrientationMismatch) screenHeight else screenWidth
+    val canvasHeight = if (isOrientationMismatch) screenWidth else screenHeight
 
     var workspaceSize by remember { mutableStateOf(IntSize.Zero) }
     var buttonPosition by remember { mutableStateOf(Offset(60f, 60f)) }
@@ -137,8 +153,8 @@ fun DesignWorkspace(
     fun toScreenPosition(p: Offset): SFTouchPosition {
         if (workspaceSize.width == 0 || workspaceSize.height == 0) return SFTouchPosition(0.0, 0.0)
         return SFTouchPosition(
-            (p.x / workspaceSize.width * screenWidth).toDouble(),
-            (p.y / workspaceSize.height * screenHeight).toDouble()
+            (p.x / workspaceSize.width * canvasWidth).toDouble(),
+            (p.y / workspaceSize.height * canvasHeight).toDouble()
         )
     }
 
@@ -152,8 +168,8 @@ fun DesignWorkspace(
     fun toWorkspacePosition(p: SFTouchPosition): Offset {
         if (workspaceSize.width == 0 || workspaceSize.height == 0) return Offset.Zero
         return Offset(
-            (p.x / screenWidth * workspaceSize.width).toFloat(),
-            (p.y / screenHeight * workspaceSize.height).toFloat()
+            (p.x / canvasWidth * workspaceSize.width).toFloat(),
+            (p.y / canvasHeight * workspaceSize.height).toFloat()
         )
     }
 
@@ -178,14 +194,29 @@ fun DesignWorkspace(
         }
     }
 
+    //外层占满可用区域，方向冲突时内层按组合宽高比缩放并居中
     Box(
-        modifier = modifier
-            .fillMaxHeight()
-            .padding(8.dp)
-            .border(1.dp, Color.LightGray, RoundedCornerShape(8.dp))
-            .onSizeChanged { workspaceSize = it }
-            .pointerInput(workspaceSize, currentEvent.type) {
-                when (currentEvent.type) {
+        modifier = modifier.fillMaxSize(),
+        contentAlignment = Alignment.Center
+    ) {
+        val previewModifier = when {
+            //横屏组合在竖屏显示：占满宽
+            isOrientationMismatch && canvasWidth >= canvasHeight ->
+                Modifier.fillMaxWidth().aspectRatio(canvasWidth.toFloat() / canvasHeight.toFloat())
+            //竖屏组合在横屏显示：占满高
+            isOrientationMismatch ->
+                Modifier.fillMaxHeight().aspectRatio(canvasWidth.toFloat() / canvasHeight.toFloat())
+            else -> Modifier.fillMaxSize()
+        }
+        Box(
+            modifier = previewModifier
+                .padding(8.dp)
+                .border(1.dp, Color.LightGray, RoundedCornerShape(8.dp))
+                .onSizeChanged { workspaceSize = it }
+                .pointerInput(workspaceSize, currentEvent.type, isOrientationMismatch) {
+                    //方向不匹配时不允许编辑当前组合
+                    if (isOrientationMismatch) return@pointerInput
+                    when (currentEvent.type) {
                     //点击事件：在平台任意位置点按，按钮出现在点按处并记录坐标
                     1 -> detectTapGestures { tap ->
                         dragPath = emptyList()
@@ -237,9 +268,9 @@ fun DesignWorkspace(
                     drawLine(gridColor, Offset(x, 0f), Offset(x, size.height))
                     drawLine(gridColor, Offset(0f, y), Offset(size.width, y))
                 }
-                drawText(textMeasurer, "${screenWidth * i / 4}", Offset(x + 2f, 2f), labelStyle)
+                drawText(textMeasurer, "${canvasWidth * i / 4}", Offset(x + 2f, 2f), labelStyle)
                 if (i > 0) {
-                    drawText(textMeasurer, "${screenHeight * i / 4}", Offset(2f, y + 2f), labelStyle)
+                    drawText(textMeasurer, "${canvasHeight * i / 4}", Offset(2f, y + 2f), labelStyle)
                 }
             }
             //只有滑动事件才绘制轨迹：线段 + 每个采样点画朝向下一采样点的三角形，密集程度反映移动快慢
@@ -288,6 +319,24 @@ fun DesignWorkspace(
                     .background(Color(0xFF0052D4), CircleShape)
             )
         }
+
+        //方向不匹配时给出提示并锁定编辑
+        if (isOrientationMismatch) {
+            Text(
+                text = if (currentComposition?.isLandscape == true)
+                    "该组合是横屏组合，当前为竖屏，暂不可编辑\n请旋转设备到横屏后再编辑"
+                else
+                    "该组合是竖屏组合，当前为横屏，暂不可编辑\n请旋转设备到竖屏后再编辑",
+                fontSize = 13.sp,
+                color = Color(0xFF333333),
+                textAlign = TextAlign.Center,
+                modifier = Modifier
+                    .align(Alignment.Center)
+                    .background(Color(0xF2FFFFFF), RoundedCornerShape(8.dp))
+                    .padding(horizontal = 12.dp, vertical = 8.dp)
+            )
+        }
+    }
     }
 }
 
@@ -505,8 +554,8 @@ fun CompositionList(
 
     if (showNameDialog) {
         CompositionNameDialog(
-            onConfirm = { name ->
-                viewModel.addComposition(name)
+            onConfirm = { name, isLandscape ->
+                viewModel.addComposition(name, isLandscape)
                 showNameDialog = false
             },
             onDismiss = { showNameDialog = false }
@@ -572,21 +621,45 @@ private fun DelayInputDialog(
 }
 
 @Composable
-private fun CompositionNameDialog(onConfirm: (String) -> Unit, onDismiss: () -> Unit) {
+private fun CompositionNameDialog(
+    onConfirm: (String, Boolean) -> Unit,
+    onDismiss: () -> Unit
+) {
     var input by remember { mutableStateOf("") }
+    var isLandscape by remember { mutableStateOf(false) }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("新建组合") },
         text = {
-            OutlinedTextField(
-                value = input,
-                onValueChange = { input = it },
-                label = { Text("组合名称") },
-                singleLine = true
-            )
+            Column {
+                OutlinedTextField(
+                    value = input,
+                    onValueChange = { input = it },
+                    label = { Text("组合名称") },
+                    singleLine = true
+                )
+                // 名字输入框下方的屏幕方向选择：竖屏 / 横屏
+                Row(
+                    modifier = Modifier.padding(top = 12.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(text = "屏幕方向", fontSize = 13.sp, color = Color.Gray)
+                    FilterChip(
+                        selected = !isLandscape,
+                        onClick = { isLandscape = false },
+                        label = { Text("竖屏") }
+                    )
+                    FilterChip(
+                        selected = isLandscape,
+                        onClick = { isLandscape = true },
+                        label = { Text("横屏") }
+                    )
+                }
+            }
         },
         confirmButton = {
-            TextButton(onClick = { onConfirm(input) }) {
+            TextButton(onClick = { onConfirm(input, isLandscape) }) {
                 Text("确定")
             }
         },

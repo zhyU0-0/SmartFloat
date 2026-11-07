@@ -102,9 +102,9 @@ class AppRepository(private val database: AppDatabase) {
         val out: Skills? = database.getActiveSkill();
         if(out == null) {
             Log.d("Skills" ,"database.getActiveSkill() is null")
-            return OutputSkills("","","");
+            return OutputSkills("","");
         }
-        return OutputSkills(out.skillsName,out.content.toString(),out.clickingTips.toString());
+        return OutputSkills(out.skillsName,out.content.toString());
     }
 
     // Conversation 操作

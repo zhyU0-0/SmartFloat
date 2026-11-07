@@ -20,5 +20,6 @@ data class SFTouchPosition(
 data class SFTouchEventComposition(
     val id: Long = 0,
     val name: String = "",
+    val isLandscape: Boolean = false,
     val composition: List<SFTouchEvent>
 )

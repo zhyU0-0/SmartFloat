@@ -68,14 +68,12 @@ class SkillsManagerViewModel : ViewModel() {
      * @param editingSkillId 编辑中的技能ID，null表示新建
      * @param skillsName 技能名称
      * @param content 技能内容
-     * @param clickingTips 点击要点
      * @param compositions 编辑页当前的组合关联列表（relationId 为 null 表示新增）
      */
     fun saveSkillWithCompositions(
         editingSkillId: Long?,
         skillsName: String,
         content: String?,
-        clickingTips: String?,
         compositions: List<SkillCompositionInput>
     ) {
         viewModelScope.launch {
@@ -87,8 +85,7 @@ class SkillsManagerViewModel : ViewModel() {
                 if (skill != null) {
                     val updatedSkill = skill.copy(
                         skillsName = skillsName,
-                        content = content,
-                        clickingTips = clickingTips
+                        content = content
                     )
                     repository.updateSkill(updatedSkill)
                 }
@@ -97,7 +94,6 @@ class SkillsManagerViewModel : ViewModel() {
                 val skill = Skills(
                     skillsName = skillsName,
                     content = content,
-                    clickingTips = clickingTips,
                     isActive = _skills.value.isEmpty(),
                     createdAt = System.currentTimeMillis()
                 )
@@ -115,10 +111,10 @@ class SkillsManagerViewModel : ViewModel() {
                         .filter { it.relationId !in keptRelationIds }
                         .forEach { database.deleteSkillComposition(it.relationId) }
 
-                    // 2. 更新已有关联（描述/组合名）
+                    // 2. 更新已有关联（描述/组合名/横竖屏）
                     compositions.forEach { input ->
                         val relationId = input.relationId ?: return@forEach
-                        database.updateSkillComposition(relationId, input.description ?: "")
+                        database.updateSkillComposition(relationId, input.description ?: "", input.isLandscape)
                         database.updateSkillCompositionName(relationId, input.compositionName)
                     }
 
@@ -128,7 +124,8 @@ class SkillsManagerViewModel : ViewModel() {
                             finalSkillId,
                             input.compositionId,
                             input.compositionName,
-                            input.description
+                            input.description,
+                            input.isLandscape
                         )
                     }
                 }
@@ -136,12 +133,11 @@ class SkillsManagerViewModel : ViewModel() {
         }
     }
 
-    fun addSkill(skillsName: String, content: String?, clickingTips: String?) {
+    fun addSkill(skillsName: String, content: String?) {
         viewModelScope.launch {
             val skill = Skills(
                 skillsName = skillsName,
                 content = content,
-                clickingTips = clickingTips,
                 isActive = _skills.value.isEmpty(),
                 createdAt = System.currentTimeMillis()
             )
@@ -161,14 +157,13 @@ class SkillsManagerViewModel : ViewModel() {
         }
     }
 
-    fun updateSkill(skillId: Long, skillsName: String, content: String?, clickingTips: String?) {
+    fun updateSkill(skillId: Long, skillsName: String, content: String?) {
         viewModelScope.launch {
             val skill = _skills.value.find { it.id == skillId }
             if (skill != null) {
                 val updatedSkill = skill.copy(
                     skillsName = skillsName,
-                    content = content,
-                    clickingTips = clickingTips
+                    content = content
                 )
                 repository.updateSkill(updatedSkill)
             }
