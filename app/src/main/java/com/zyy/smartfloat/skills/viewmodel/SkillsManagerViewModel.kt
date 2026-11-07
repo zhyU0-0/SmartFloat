@@ -203,8 +203,4 @@ class SkillsManagerViewModel : ViewModel() {
         Toast.makeText(context, "复制成功", Toast.LENGTH_SHORT).show()
         clipboard.setPrimaryClip(newClip)
     }
-
-    fun gotoTouchDesignActivity() {
-        // TODO: 实现跳转
-    }
 }

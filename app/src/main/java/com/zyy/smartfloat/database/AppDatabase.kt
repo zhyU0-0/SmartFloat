@@ -581,6 +581,25 @@ class AppDatabase(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME, n
         return cursorToCompositionList(cursor)
     }
 
+    /**
+     * 查询指定技能关联的组合（含事件列表），供悬浮窗展示/执行使用。
+     */
+    fun getCompositionsBySkillIdWithEvents(skillId: Long): List<SFTouchEventComposition> {
+        val db = readableDatabase
+        val sql = """
+            SELECT tc.$COL_COMPOSITION_ID AS $COL_COMPOSITION_ID,
+                   COALESCE(sc.$COL_SC_COMPOSITION_NAME, tc.$COL_COMPOSITION_NAME) AS $COL_COMPOSITION_NAME,
+                   tc.$COL_COMPOSITION_EVENTS AS $COL_COMPOSITION_EVENTS
+            FROM $TABLE_SKILL_COMPOSITION sc
+            INNER JOIN $TABLE_TOUCH_COMPOSITION tc
+                ON tc.$COL_COMPOSITION_ID = sc.$COL_SC_COMPOSITION_ID
+            WHERE sc.$COL_SC_SKILL_ID = ?
+            ORDER BY sc.$COL_SC_CREATED_AT ASC
+        """.trimIndent()
+        val cursor = db.rawQuery(sql, arrayOf(skillId.toString()))
+        return cursorToCompositionList(cursor)
+    }
+
     private fun cursorToCompositionList(cursor: Cursor): List<SFTouchEventComposition> {
         val list = mutableListOf<SFTouchEventComposition>()
         while (cursor.moveToNext()) {

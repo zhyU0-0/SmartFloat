@@ -427,7 +427,7 @@ class FloatingWindowService : Service() {
     }
 
     /**
-     * 组合按钮：展开/隐藏底部的组合列表，展开时从数据库读取已存储的组合。
+     * 组合按钮：展开/隐藏底部的组合列表，展开时读取当前选中技能关联的组合。
      */
     private fun toggleCompositionList() {
         if (isCompositionShown) {
@@ -439,19 +439,35 @@ class FloatingWindowService : Service() {
         compositionScroll?.visibility = View.VISIBLE
         isCompositionShown = true
         serviceScope.launch {
-            val compositions = withContext(Dispatchers.IO) {
-                AppDatabase.getInstance(this@FloatingWindowService).getAllCompositions()
+            val result = withContext(Dispatchers.IO) {
+                val db = AppDatabase.getInstance(this@FloatingWindowService)
+                // 只展示当前选中技能关联的组合
+                val activeSkill = db.getActiveSkill()
+                val compositions = if (activeSkill == null) {
+                    emptyList()
+                } else {
+                    db.getCompositionsBySkillIdWithEvents(activeSkill.id)
+                }
+                activeSkill to compositions
             }
-            mainHandler.post { renderCompositionList(compositions) }
+            mainHandler.post {
+                renderCompositionList(
+                    result.second,
+                    if (result.first == null) "请先在技能管理中选择技能" else "当前技能暂无关联组合"
+                )
+            }
         }
     }
 
-    private fun renderCompositionList(compositions: List<SFTouchEventComposition>) {
+    private fun renderCompositionList(
+        compositions: List<SFTouchEventComposition>,
+        emptyHint: String = "暂无组合"
+    ) {
         val container = compositionContainer ?: return
         if (!isCompositionShown) return
         container.removeAllViews()
         if (compositions.isEmpty()) {
-            container.addView(createCompositionRow("暂无组合", ""))
+            container.addView(createCompositionRow(emptyHint, ""))
             return
         }
         compositions.forEachIndexed { index, composition ->
