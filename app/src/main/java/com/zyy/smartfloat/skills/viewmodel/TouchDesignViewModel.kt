@@ -61,20 +61,33 @@ class TouchDesignViewModel : ViewModel() {
         }
     }
 
-    fun addComposition(name: String, isLandscape: Boolean = false){
+    fun addComposition(name: String, isLandscape: Boolean = false): Boolean {
         //1. 先把当前事件列表保存回当前组合，并更新数据库
         saveCurrentEventsToComposition()
-        //2. 创建新组合，写入数据库
-        val finalName = name.trim().ifEmpty { "组合 ${_touchEventCompositions.value.size + 1}" }
+        //2. 创建新组合，写入数据库；组合名称不能重复
+        val list = _touchEventCompositions.value
+        val finalName = name.trim().ifEmpty { generateUniqueName("组合 ${list.size + 1}", list) }
+        if (list.any { it.name == finalName }) {
+            return false
+        }
         val newComposition = SFTouchEventComposition(name = finalName, isLandscape = isLandscape, composition = emptyList())
         val id = database.insertComposition(newComposition)
+        if (id <= 0) return false
         //3. 选中新组合，事件列表切换为新组合（空）
-        _touchEventCompositions.value = _touchEventCompositions.value + newComposition.copy(id = id)
+        _touchEventCompositions.value = list + newComposition.copy(id = id)
         _composition.value = emptyList()
         editingIndex = -1
         _selectedIndex.value = -1
         touchEvent.value = getEmptyTouchEvent()
         _selectedCompositionIndex.value = _touchEventCompositions.value.size - 1
+        return true
+    }
+
+    private fun generateUniqueName(base: String, list: List<SFTouchEventComposition>): String {
+        if (list.none { it.name == base }) return base
+        var i = 2
+        while (list.any { it.name == "$base($i)" }) i++
+        return "$base($i)"
     }
 
     fun addTouchEvent(event: SFTouchEvent){
@@ -207,7 +220,7 @@ class TouchDesignViewModel : ViewModel() {
         } else if (current.isNotEmpty()) {
             //没有选中组合时，把当前事件存为新组合，避免切换后丢失
             val newComposition = SFTouchEventComposition(
-                name = "组合 ${list.size + 1}",
+                name = generateUniqueName("组合 ${list.size + 1}", list),
                 composition = current
             )
             val id = database.insertComposition(newComposition)

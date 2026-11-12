@@ -519,6 +519,7 @@ fun CompositionList(
 ){
     val touchEventCompositions by viewModel.touchEventCompositions.collectAsState()
     val selectedCompositionIndex by viewModel.selectedCompositionIndex.collectAsState()
+    val context = LocalContext.current
     var showNameDialog by remember { mutableStateOf(false) }
     var compositionActionIndex by remember { mutableStateOf(-1) }
     //横向显示列表，高80dp，末尾为添加按钮，右侧为保存按钮
@@ -555,8 +556,11 @@ fun CompositionList(
     if (showNameDialog) {
         CompositionNameDialog(
             onConfirm = { name, isLandscape ->
-                viewModel.addComposition(name, isLandscape)
-                showNameDialog = false
+                if (viewModel.addComposition(name, isLandscape)) {
+                    showNameDialog = false
+                } else {
+                    Toast.makeText(context, "组合名称已存在，请换一个名称", Toast.LENGTH_SHORT).show()
+                }
             },
             onDismiss = { showNameDialog = false }
         )
