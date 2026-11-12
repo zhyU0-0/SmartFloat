@@ -107,6 +107,21 @@ class AppRepository(private val database: AppDatabase) {
         return OutputSkills(out.skillsName,out.content.toString());
     }
 
+    /**
+     * 获取当前选中技能关联、且与屏幕方向一致的组合列表。
+     */
+    fun getActiveSkillCompositionsSync(isLandscape: Boolean): List<SkillCompositionDetail> {
+        val skill: Skills = database.getActiveSkill() ?: return emptyList()
+        return database.getCompositionsBySkillId(skill.id, isLandscape)
+    }
+
+    /**
+     * 按组合名称获取完整组合（名称唯一）。
+     */
+    fun getCompositionByNameSync(name: String): SFTouchEventComposition? {
+        return database.getCompositionByName(name)
+    }
+
     // Conversation 操作
     suspend fun insertConversation(
         remark: String,

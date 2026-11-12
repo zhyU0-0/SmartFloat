@@ -3,13 +3,15 @@ package com.zyy.smartfloat.prompt
 import android.content.Context
 import com.zyy.smartfloat.R
 import com.zyy.smartfloat.database.OutputSkills
+import com.zyy.smartfloat.skills.EditingComposition
 
 
 data class LLmResponse(
     val tapPoints: List<TapPoints>,
     val command: String?,
     val isEnd: Boolean,
-    val remark: String
+    val remark: String,
+    val composition: Int? = null
 )
 data class TapPoints(
     val tapX: Double,
@@ -29,7 +31,8 @@ data class LLmBody(
 
 data class ProcessHistory(
     val process: String,
-    val TapPoints: List<TapPoints>
+    val TapPoints: List<TapPoints>,
+    var composition: String? = null
 )
 
 

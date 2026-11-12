@@ -32,6 +32,7 @@ import com.google.mlkit.vision.text.latin.TextRecognizerOptions
 import com.zyy.smartfloat.MyApp
 import com.zyy.smartfloat.R
 import com.zyy.smartfloat.database.AppDatabase
+import com.zyy.smartfloat.database.OutputComposition
 import com.zyy.smartfloat.network.ImageUrl
 import com.zyy.smartfloat.network.LLmThinkingType
 import com.zyy.smartfloat.network.LlmContent
@@ -431,7 +432,8 @@ class FloatTaskProcessor(
                     listOf(TapPoints(1.0, 10.0, 100)),
                     "用户指令",
                     false,
-                    "简短的执行细节"
+                    "简短的执行细节",
+                    null
                 )
 
                 val gson = Gson()
@@ -442,9 +444,19 @@ class FloatTaskProcessor(
                     else
                         buildLlmPrompt(context, json)
                 val activeSkills = MyApp.Companion.repository.getActiveOutputSkillSync()
+                //当前技能关联且与屏幕方向一致的组合，大模型返回的 composition 为该列表的索引
+                val skillCompositions =
+                    if (activeSkills.skillsName != "")
+                        MyApp.Companion.repository.getActiveSkillCompositionsSync(screenWidth > screenHeight)
+                    else emptyList()
+                val outputSkills = activeSkills.copy(
+                    compositions = skillCompositions.map { composition ->
+                        OutputComposition(composition.compositionName, composition.description ?: "")
+                    }
+                )
                 val llmBody:LLmBody;
                 if(activeSkills.skillsName != ""){
-                    llmBody = LLmBody(llmPrompt, question, activeSkills,screenWidth, screenHeight, history, "")
+                    llmBody = LLmBody(llmPrompt, question, outputSkills,screenWidth, screenHeight, history, "")
                 }else{
                     llmBody = LLmBody(a_prompt = llmPrompt, b_question = question, c_maxX = screenWidth, c_maxY = screenHeight, d_history = history, z_content = "")
                 }
@@ -547,6 +559,21 @@ class FloatTaskProcessor(
                                 1
                             )
                         }
+                        //tapPoints 处理完后，再按大模型返回的索引取组合名，并按名字取出完整组合执行
+                        val compositionIndex = llmResponse?.composition
+                        if (compositionIndex != null) {
+                            val compositionName = skillCompositions.getOrNull(compositionIndex)?.compositionName
+                            val targetComposition = compositionName?.let {
+                                MyApp.Companion.repository.getCompositionByNameSync(it)
+                            }
+                            if (targetComposition != null) {
+                                Log.d(TAG, "执行组合: index=$compositionIndex, name=${targetComposition.name}, " +
+                                        "events=${targetComposition.composition.size}")
+                                TapAccessibilityService.Companion.instance?.executeComposition(targetComposition)
+                            } else {
+                                Log.w(TAG, "无效的组合索引: $compositionIndex, 可用组合数=${skillCompositions.size}")
+                            }
+                        }
                         uiCallback.showToast("LLM: ${llmResponse?.remark ?: answer}", false)
                         sendLlmResultToActivity(llmResponse.remark ?: answer)
                         if (llmResponse?.isEnd == true) {
@@ -560,7 +587,12 @@ class FloatTaskProcessor(
                             if (history.size >= MAX_HISTORY_SIZE) {
                                 history.removeAt(0)
                             }
-                            history.add(ProcessHistory(it, llmResponse.tapPoints))
+                            val pHistory = ProcessHistory(it, llmResponse.tapPoints)
+                            // 添加上次选择的组合名字
+                            llmResponse.composition?.let { index ->
+                                pHistory.composition = skillCompositions.getOrNull(index)?.compositionName ?: ""
+                            }
+                            history.add(pHistory)
                         }
 
                         if (loopCount < maxLoops) {

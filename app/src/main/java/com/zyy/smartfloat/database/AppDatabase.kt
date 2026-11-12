@@ -120,7 +120,7 @@ class AppDatabase(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME, n
         val createTouchComposition = """
             CREATE TABLE IF NOT EXISTS $TABLE_TOUCH_COMPOSITION (
                 $COL_COMPOSITION_ID INTEGER PRIMARY KEY AUTOINCREMENT,
-                $COL_COMPOSITION_NAME TEXT NOT NULL,
+                $COL_COMPOSITION_NAME TEXT NOT NULL UNIQUE,
                 $COL_COMPOSITION_IS_LANDSCAPE INTEGER NOT NULL DEFAULT 0,
                 $COL_COMPOSITION_EVENTS TEXT NOT NULL,
                 $COL_COMPOSITION_CREATED_AT INTEGER NOT NULL
@@ -152,7 +152,7 @@ class AppDatabase(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME, n
             db.execSQL("""
             CREATE TABLE IF NOT EXISTS $TABLE_TOUCH_COMPOSITION (
                 $COL_COMPOSITION_ID INTEGER PRIMARY KEY AUTOINCREMENT,
-                $COL_COMPOSITION_NAME TEXT NOT NULL,
+                $COL_COMPOSITION_NAME TEXT NOT NULL UNIQUE,
                 $COL_COMPOSITION_IS_LANDSCAPE INTEGER NOT NULL DEFAULT 0,
                 $COL_COMPOSITION_EVENTS TEXT NOT NULL,
                 $COL_COMPOSITION_CREATED_AT INTEGER NOT NULL
@@ -203,6 +203,8 @@ class AppDatabase(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME, n
                     )
                 """)
             }
+            // 组合名称唯一约束
+            db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS idx_touch_composition_name ON $TABLE_TOUCH_COMPOSITION($COL_COMPOSITION_NAME)")
             // 删除已废弃的点击要点字段：通过重建表实现（兼容低版本 SQLite 不支持 DROP COLUMN）
             val tempTable = "${TABLE_SKILL}_new"
             db.execSQL("""
@@ -613,6 +615,15 @@ class AppDatabase(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME, n
         )
     }
 
+    /**
+     * 按名称查询完整组合，组合名称唯一。
+     */
+    fun getCompositionByName(name: String): SFTouchEventComposition? {
+        val db = readableDatabase
+        val sql = "SELECT * FROM $TABLE_TOUCH_COMPOSITION WHERE $COL_COMPOSITION_NAME = ? LIMIT 1"
+        return cursorToCompositionList(db.rawQuery(sql, arrayOf(name))).firstOrNull()
+    }
+
     fun getAllCompositions(): List<SFTouchEventComposition> {
         val db = readableDatabase
         val cursor = db.query(
@@ -717,8 +728,9 @@ class AppDatabase(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME, n
         )
     }
 
-    fun getCompositionsBySkillId(skillId: Long): List<SkillCompositionDetail> {
+    fun getCompositionsBySkillId(skillId: Long, isLandscape: Boolean? = null): List<SkillCompositionDetail> {
         val db = readableDatabase
+        val orientationCondition = if (isLandscape != null) " AND sc.$COL_SC_IS_LANDSCAPE = ?" else ""
         val sql = """
             SELECT 
                 sc.$COL_SC_ID as relationId,
@@ -729,10 +741,14 @@ class AppDatabase(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME, n
                 sc.$COL_SC_IS_LANDSCAPE as isLandscape
             FROM $TABLE_SKILL_COMPOSITION sc
             LEFT JOIN $TABLE_TOUCH_COMPOSITION tc ON sc.$COL_SC_COMPOSITION_ID = tc.$COL_COMPOSITION_ID
-            WHERE sc.$COL_SC_SKILL_ID = ?
+            WHERE sc.$COL_SC_SKILL_ID = ?$orientationCondition
             ORDER BY sc.$COL_SC_CREATED_AT ASC
         """.trimIndent()
-        val cursor = db.rawQuery(sql, arrayOf(skillId.toString()))
+        val args = if (isLandscape != null)
+            arrayOf(skillId.toString(), if (isLandscape) "1" else "0")
+        else
+            arrayOf(skillId.toString())
+        val cursor = db.rawQuery(sql, args)
         val list = mutableListOf<SkillCompositionDetail>()
         while (cursor.moveToNext()) {
             val eventsRaw = cursor.getString(cursor.getColumnIndexOrThrow("events"))
