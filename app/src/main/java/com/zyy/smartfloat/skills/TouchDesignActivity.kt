@@ -1,16 +1,25 @@
 package com.zyy.smartfloat.skills
 
+import android.content.Context
+import android.graphics.BitmapFactory
 import android.os.Bundle
+import android.util.DisplayMetrics
+import android.view.WindowManager
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.viewModels
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -59,10 +68,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -127,8 +139,12 @@ fun DesignWorkspace(
 ){
     //事件设计平台：按屏幕宽高建立坐标系（原点左上角），平台上的操作只覆盖当前事件
     val context = LocalContext.current
-    val screenWidth = context.resources.displayMetrics.widthPixels
-    val screenHeight = context.resources.displayMetrics.heightPixels
+    //使用包含系统栏的真实屏幕尺寸，与截图范围和 simulateTap 的坐标系保持一致
+    val windowManager = context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
+    @Suppress("DEPRECATION")
+    val realMetrics = DisplayMetrics().also { windowManager.defaultDisplay.getRealMetrics(it) }
+    val screenWidth = realMetrics.widthPixels
+    val screenHeight = realMetrics.heightPixels
     val currentEvent by viewModel.touchEvent.collectAsState()
     val compositions by viewModel.touchEventCompositions.collectAsState()
     val selectedCompositionIndex by viewModel.selectedCompositionIndex.collectAsState()
@@ -148,6 +164,19 @@ fun DesignWorkspace(
     var dragPath by remember { mutableStateOf<List<Offset>>(emptyList()) }
     val textMeasurer = rememberTextMeasurer()
     val buttonRadiusPx = with(LocalDensity.current) { 14.dp.toPx() }
+
+    //参考图（长按选择相册图片，仅用于设计参考，不保存）
+    var referenceImage by remember { mutableStateOf<ImageBitmap?>(null) }
+    val imagePickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri ->
+        uri?.let {
+            context.contentResolver.openInputStream(it)?.use { stream ->
+                val bitmap = BitmapFactory.decodeStream(stream)
+                referenceImage = bitmap?.asImageBitmap()
+            }
+        }
+    }
 
     //工作区坐标 -> 屏幕坐标
     fun toScreenPosition(p: Offset): SFTouchPosition {
@@ -194,68 +223,113 @@ fun DesignWorkspace(
         }
     }
 
-    //外层占满可用区域，方向冲突时内层按组合宽高比缩放并居中
+    //外层占满可用区域，设计平台按屏幕宽高比等比缩放并居中
     Box(
         modifier = modifier.fillMaxSize(),
         contentAlignment = Alignment.Center
     ) {
-        val previewModifier = when {
-            //横屏组合在竖屏显示：占满宽
-            isOrientationMismatch && canvasWidth >= canvasHeight ->
-                Modifier.fillMaxWidth().aspectRatio(canvasWidth.toFloat() / canvasHeight.toFloat())
-            //竖屏组合在横屏显示：占满高
-            isOrientationMismatch ->
-                Modifier.fillMaxHeight().aspectRatio(canvasWidth.toFloat() / canvasHeight.toFloat())
-            else -> Modifier.fillMaxSize()
-        }
         Box(
-            modifier = previewModifier
+            modifier = Modifier
                 .padding(8.dp)
+                .aspectRatio(canvasWidth.toFloat() / canvasHeight.toFloat())
                 .border(1.dp, Color.LightGray, RoundedCornerShape(8.dp))
                 .onSizeChanged { workspaceSize = it }
                 .pointerInput(workspaceSize, currentEvent.type, isOrientationMismatch) {
                     //方向不匹配时不允许编辑当前组合
                     if (isOrientationMismatch) return@pointerInput
                     when (currentEvent.type) {
-                    //点击事件：在平台任意位置点按，按钮出现在点按处并记录坐标
-                    1 -> detectTapGestures { tap ->
-                        dragPath = emptyList()
-                        buttonPosition = clampToWorkspace(tap - Offset(buttonRadiusPx, buttonRadiusPx))
-                        val pos = toScreenPosition(tap)
-                        viewModel.recordTouchEvent(
-                            currentEvent.copy(downPosition = pos, upPosition = pos)
-                        )
-                    }
-                    //滑动事件：在平台任意位置开始拖动，按钮跟随手指，轨迹即实际拖动路径
-                    2 -> detectDragGestures(
-                        onDragStart = { start ->
-                            buttonPosition = clampToWorkspace(start - Offset(buttonRadiusPx, buttonRadiusPx))
-                            dragPath = listOf(start)
+                    //点击事件：在平台任意位置点按，按钮出现在点按处并记录坐标；长按选择参考图
+                    1 -> detectTapGestures(
+                        onTap = { tap ->
+                            dragPath = emptyList()
+                            buttonPosition = clampToWorkspace(tap - Offset(buttonRadiusPx, buttonRadiusPx))
+                            val pos = toScreenPosition(tap)
+                            viewModel.recordTouchEvent(
+                                currentEvent.copy(downPosition = pos, upPosition = pos)
+                            )
                         },
-                        onDrag = { change, _ ->
-                            change.consume()
-                            val p = change.position
-                            buttonPosition = clampToWorkspace(p - Offset(buttonRadiusPx, buttonRadiusPx))
-                            dragPath = dragPath + p
-                        },
-                        onDragEnd = {
-                            if (dragPath.size >= 2) {
-                                viewModel.recordTouchEvent(
-                                    currentEvent.copy(
-                                        downPosition = toScreenPosition(dragPath.first()),
-                                        movePositionList = dragPath
-                                            .subList(1, dragPath.size - 1)
-                                            .map { toScreenPosition(it) },
-                                        upPosition = toScreenPosition(dragPath.last())
+                        onLongPress = { imagePickerLauncher.launch("image/*") }
+                    )
+                    //滑动事件：在平台任意位置开始拖动，按钮跟随手指，轨迹即实际拖动路径；长按选择参考图
+                    2 -> awaitEachGesture {
+                        val firstDown = awaitFirstDown(requireUnconsumed = false)
+                        val downTime = System.currentTimeMillis()
+
+                        var longPressTriggered = false
+                        var dragStarted = false
+                        val startPos = firstDown.position
+
+                        while (true) {
+                            val event = awaitPointerEvent()
+                            val change = event.changes.first()
+
+                            if (change.pressed) {
+                                if (!dragStarted && !longPressTriggered) {
+                                    val elapsed = System.currentTimeMillis() - downTime
+                                    val dx = change.position.x - startPos.x
+                                    val dy = change.position.y - startPos.y
+                                    val dist = kotlin.math.sqrt(dx * dx + dy * dy)
+                                    if (dist > viewConfiguration.touchSlop) {
+                                        dragStarted = true
+                                        buttonPosition = clampToWorkspace(startPos - Offset(buttonRadiusPx, buttonRadiusPx))
+                                        dragPath = listOf(startPos)
+                                    } else if (elapsed >= 500) {
+                                        longPressTriggered = true
+                                        imagePickerLauncher.launch("image/*")
+                                    }
+                                }
+
+                                if (dragStarted) {
+                                    change.consume()
+                                    buttonPosition = clampToWorkspace(change.position - Offset(buttonRadiusPx, buttonRadiusPx))
+                                    dragPath = dragPath + change.position
+                                }
+                            } else {
+                                if (dragStarted && dragPath.size >= 2) {
+                                    viewModel.recordTouchEvent(
+                                        currentEvent.copy(
+                                            downPosition = toScreenPosition(dragPath.first()),
+                                            movePositionList = dragPath
+                                                .subList(1, dragPath.size - 1)
+                                                .map { toScreenPosition(it) },
+                                            upPosition = toScreenPosition(dragPath.last())
+                                        )
                                     )
-                                )
+                                } else if (dragStarted) {
+                                    dragPath = emptyList()
+                                }
+                                break
                             }
-                        },
-                        onDragCancel = { dragPath = emptyList() }
+                        }
+                    }
+                    //type=0 延时事件不响应编辑手势，但仍可长按添加参考图
+                    else -> detectTapGestures(
+                        onLongPress = { imagePickerLauncher.launch("image/*") }
                     )
                 }
             }
     ) {
+        //参考图背景（长按从相册选择，仅用于设计参考）
+        referenceImage?.let { image ->
+            Image(
+                bitmap = image,
+                contentDescription = "参考图",
+                modifier = Modifier.fillMaxSize(),
+                contentScale = ContentScale.FillBounds,
+                alpha = 0.6f
+            )
+        }
+
+        //无参考图时的空提示
+        if (referenceImage == null) {
+            Text(
+                text = "长按添加参考图",
+                fontSize = 14.sp,
+                color = Color(0xFFBBBBBB),
+                modifier = Modifier.align(Alignment.Center)
+            )
+        }
+
         //坐标系网格 + 刻度 + 滑动轨迹
         Canvas(modifier = Modifier.fillMaxSize()) {
             if (workspaceSize == IntSize.Zero) return@Canvas
