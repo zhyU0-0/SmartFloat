@@ -59,8 +59,6 @@ class FloatingWindowService : Service() {
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val mainHandler = Handler(Looper.getMainLooper())
     private val LONG_PRESS_THRESHOLD = 500L // 长按阈值500ms
-    private val DOUBLE_CLICK_INTERVAL = 300L // 双击间隔阈值
-    private var lastClickTime = 0L // 上次点击时刻（eventTime，用于双击检测）
 
     // 业务处理器：承接语音/截图OCR/图片上传/LLM循环/广播通知
     private lateinit var processor: FloatTaskProcessor
@@ -327,9 +325,15 @@ class FloatingWindowService : Service() {
                 }
             }
 
-            // 初始状态按钮：点击横向展开为「收起 / 组合 / 录音」
+            // 初始状态按钮：处理中点击暂停（取消任务），否则横向展开为「收起 / 组合 / 录音」
             floatingIcon?.let { icon ->
-                attachTouchHandler(icon, longPressEnabled = false) { setExpanded(true) }
+                attachTouchHandler(icon, longPressEnabled = false) {
+                    if (processor.isProcessing) {
+                        processor.cancelProcessing()
+                    } else {
+                        setExpanded(true)
+                    }
+                }
             }
 
             // 收起：回到初始状态，同时隐藏组合列表
@@ -343,20 +347,22 @@ class FloatingWindowService : Service() {
                 toggleCompositionList()
             }
 
-            // 录音：长按录音（松开结束），拖动可移动悬浮窗
+            // 录音：点击以空文本进入编辑状态；长按录音，松开识别后进入编辑状态
             floatView!!.findViewById<ImageView>(R.id.floating_record_button).let { recordButton ->
-                attachTouchHandler(recordButton, longPressEnabled = true) { eventTime ->
+                attachTouchHandler(recordButton, longPressEnabled = true) {
                     if (processor.isProcessing) {
                         // 如果正在处理中，点击按钮取消任务
                         processor.cancelProcessing()
                     } else if (!processor.isRecording) {
-                        // 非录音状态：双击关闭悬浮窗
-                        if (eventTime - lastClickTime < DOUBLE_CLICK_INTERVAL) {
-                            lastClickTime = 0
-                            stopService()
-                        } else {
-                            lastClickTime = eventTime
-                        }
+                        // 点击：清空文本进入下一个状态（编辑状态）
+                        processor.recognizedText = ""
+                        floatingText?.text = null
+                        isEditing = true
+                        updateFloatingText()
+                        floatingText?.requestFocus()
+                        val imm = getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager
+                        imm.showSoftInput(floatingText, InputMethodManager.SHOW_IMPLICIT)
+                        editButton?.setImageResource(R.drawable.ic_complete)
                     }
                 }
             }
@@ -371,12 +377,12 @@ class FloatingWindowService : Service() {
 
     /**
      * 悬浮按钮通用触摸处理：拖动窗口 + 点击回调，长按（longPressEnabled）触发录音。
-     * @param onTap 未发生拖动的点击回调，参数为 eventTime（用于双击检测）
+     * @param onTap 未发生拖动的点击回调
      */
     private fun attachTouchHandler(
         view: View,
         longPressEnabled: Boolean,
-        onTap: (Long) -> Unit
+        onTap: () -> Unit
     ) {
         view.setOnTouchListener { _, event ->
             val params = floatLayoutParams ?: return@setOnTouchListener false
@@ -413,7 +419,7 @@ class FloatingWindowService : Service() {
 
                     // 只有当移动距离小于阈值时才认为是点击操作
                     if (deltaX <= 10 && deltaY <= 10) {
-                        onTap(event.eventTime)
+                        onTap()
                     }
                     if (processor.longPressTriggered && processor.isRecording) {
                         // 停止录音并识别
