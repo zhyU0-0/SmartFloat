@@ -325,9 +325,13 @@ class FloatingWindowService : Service() {
                 }
             }
 
-            // 初始状态按钮：处理中点击暂停（取消任务），否则横向展开为「收起 / 组合 / 录音」
+            // 初始状态按钮：处理中点击暂停（取消任务），否则横向展开为「收起 / 组合 / 录音」；长按关闭悬浮窗
             floatingIcon?.let { icon ->
-                attachTouchHandler(icon, longPressEnabled = false) {
+                attachTouchHandler(
+                    icon,
+                    longPressEnabled = false,
+                    onLongPress = { stopService() }
+                ) {
                     if (processor.isProcessing) {
                         processor.cancelProcessing()
                     } else {
@@ -376,14 +380,21 @@ class FloatingWindowService : Service() {
     }
 
     /**
-     * 悬浮按钮通用触摸处理：拖动窗口 + 点击回调，长按（longPressEnabled）触发录音。
+     * 悬浮按钮通用触摸处理：拖动窗口 + 点击回调，长按（longPressEnabled）触发录音，
+     * 或通过 onLongPress 执行自定义长按行为（如关闭悬浮窗）。
      * @param onTap 未发生拖动的点击回调
      */
     private fun attachTouchHandler(
         view: View,
         longPressEnabled: Boolean,
+        onLongPress: (() -> Unit)? = null,
         onTap: () -> Unit
     ) {
+        var longPressFired = false
+        val customLongPressTask = Runnable {
+            longPressFired = true
+            onLongPress?.invoke()
+        }
         view.setOnTouchListener { _, event ->
             val params = floatLayoutParams ?: return@setOnTouchListener false
             when (event.action) {
@@ -393,8 +404,11 @@ class FloatingWindowService : Service() {
                     initialTouchX = event.rawX
                     initialTouchY = event.rawY
                     processor.longPressTriggered = false
-                    // 如果正在处理中，不启动长按检测，准备处理点击取消
-                    if (longPressEnabled && !processor.isProcessing) {
+                    longPressFired = false
+                    if (onLongPress != null) {
+                        mainHandler.postDelayed(customLongPressTask, LONG_PRESS_THRESHOLD)
+                    } else if (longPressEnabled && !processor.isProcessing) {
+                        // 如果正在处理中，不启动长按检测，准备处理点击取消
                         mainHandler.postDelayed(longPressRunnable, LONG_PRESS_THRESHOLD)
                     }
                     true
@@ -405,20 +419,22 @@ class FloatingWindowService : Service() {
                     Log.d(TAG, "button is MOVE (" + event.rawX + " , " + event.rawY + ")")
                     floatView?.let { windowManager?.updateViewLayout(it, params) }
 
-                    // 如果移动距离超过阈值，取消长按检测（防止移动时触发录音）
+                    // 如果移动距离超过阈值，取消长按检测（防止移动时触发录音/关闭）
                     if (Math.abs(event.rawX - initialTouchX) > 10 || Math.abs(event.rawY - initialTouchY) > 10) {
                         mainHandler.removeCallbacks(longPressRunnable)
+                        mainHandler.removeCallbacks(customLongPressTask)
                     }
                     true
                 }
                 MotionEvent.ACTION_UP -> {
                     mainHandler.removeCallbacks(longPressRunnable)
+                    mainHandler.removeCallbacks(customLongPressTask)
 
                     val deltaX = Math.abs(event.rawX - initialTouchX)
                     val deltaY = Math.abs(event.rawY - initialTouchY)
 
-                    // 只有当移动距离小于阈值时才认为是点击操作
-                    if (deltaX <= 10 && deltaY <= 10) {
+                    // 只有当移动距离小于阈值且未触发长按时才认为是点击操作
+                    if (deltaX <= 10 && deltaY <= 10 && !longPressFired) {
                         onTap()
                     }
                     if (processor.longPressTriggered && processor.isRecording) {
